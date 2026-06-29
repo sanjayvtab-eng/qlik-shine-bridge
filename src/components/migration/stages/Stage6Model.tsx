@@ -97,19 +97,19 @@ function ModelPanel({
         {variant === "pbi" && facts && others ? (
           <div className="relative grid grid-cols-3 gap-4 items-start">
             <div className="space-y-3">
-              {others.slice(0, Math.ceil(others.length / 2)).map((t) => <TableNode key={t.id} t={t} />)}
+              {others.slice(0, Math.ceil(others.length / 2)).map((t) => <TableNode key={t.id} t={t} relationships={relationships} />)}
             </div>
             <div className="space-y-3">
-              {facts.map((t) => <TableNode key={t.id} t={t} highlight />)}
+              {facts.map((t) => <TableNode key={t.id} t={t} highlight relationships={relationships} />)}
               {!facts.length && <div className="text-xs text-muted-foreground text-center p-4">No fact tables</div>}
             </div>
             <div className="space-y-3">
-              {others.slice(Math.ceil(others.length / 2)).map((t) => <TableNode key={t.id} t={t} />)}
+              {others.slice(Math.ceil(others.length / 2)).map((t) => <TableNode key={t.id} t={t} relationships={relationships} />)}
             </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {tables.map((t) => <TableNode key={t.id} t={t} />)}
+            {tables.map((t) => <TableNode key={t.id} t={t} relationships={relationships} />)}
           </div>
         )}
 
@@ -128,7 +128,7 @@ function ModelPanel({
   );
 }
 
-function TableNode({ t, highlight }: { t: FinalTable; highlight?: boolean }) {
+function TableNode({ t, highlight, relationships = [] }: { t: FinalTable; highlight?: boolean; relationships?: any[] }) {
   return (
     <div className={`rounded-xl overflow-hidden border ${highlight ? "border-primary shadow-elevated" : "border-border"} bg-surface`}>
       <div className={`px-3 py-2 bg-gradient-to-r ${tableColor(t)} text-white flex items-center justify-between`}>
@@ -139,14 +139,66 @@ function TableNode({ t, highlight }: { t: FinalTable; highlight?: boolean }) {
         <span className="text-[10px] uppercase tracking-wider opacity-80">{t.type}</span>
       </div>
       <div className="text-[11px] font-mono divide-y divide-border">
-        {t.columns.slice(0, 6).map((c) => (
-          <div key={c.name} className="flex justify-between px-3 py-1">
-            <span className="truncate">{c.name}</span>
-            <span className="text-muted-foreground ml-2">{c.dataType}</span>
-          </div>
-        ))}
-        {t.columns.length > 6 && (
-          <div className="px-3 py-1 text-muted-foreground italic">+{t.columns.length - 6} more</div>
+        {t.columns.slice(0, 10).map((c) => {
+          let isPK = false;
+          let isFK = false;
+          
+          const relAsFrom = relationships.filter(r => r.fromTable === t.name && r.fromColumn === c.name);
+          const relAsTo = relationships.filter(r => r.toTable === t.name && r.toColumn === c.name);
+
+          if (relAsFrom.length > 0) {
+            if (t.type === "Fact") isFK = true;
+            else if (t.type === "Dimension" || t.type === "Calendar") isFK = true; 
+          }
+          if (relAsTo.length > 0) {
+             isPK = true; 
+          }
+
+          if (!isPK) {
+             if (t.keys?.includes(c.name)) isPK = true;
+             else if (t.type === "Calendar" && c.name === "Date") isPK = true;
+             else if (c.name.toLowerCase() === t.name.toLowerCase() + "id" || c.name.toLowerCase() === t.name.toLowerCase().replace(/_final$/, "") + "id") isPK = true;
+             else if (c.name.toLowerCase() === "id") isPK = true;
+             else if (t.type === "Fact" && c.name.toLowerCase().endsWith("id") && relAsFrom.length === 0 && relAsTo.length === 0 && t.columns[0].name === c.name) isPK = true;
+          }
+
+          if (relAsFrom.length > 0 && relAsTo.length > 0) {
+            isPK = true;
+            isFK = true;
+          }
+
+          // Special heuristic for identifying PKs in dimensions without explicit relationships yet
+          if (t.type !== "Fact" && relAsFrom.length === 0 && relAsTo.length === 0 && (c.name.toLowerCase().endsWith("id") || c.name === "Date") && t.columns[0].name === c.name) {
+             isPK = true;
+          }
+
+          let keyText = "";
+          if (isPK && isFK) keyText = "(PK, FK)";
+          else if (isPK) keyText = "(PK)";
+          else if (isFK) keyText = "(FK)";
+
+          return (
+            <div key={c.name} className="flex items-center justify-between px-3 py-1.5 bg-surface">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {isPK ? (
+                  <svg className="h-3 w-3 text-amber-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/>
+                    <path d="m21 2-9.6 9.6"/>
+                    <circle cx="7.5" cy="15.5" r="5.5"/>
+                  </svg>
+                ) : (
+                  <span className="w-3 shrink-0" />
+                )}
+                <span className="truncate font-medium">
+                  {c.name} {keyText && <span className="text-muted-foreground ml-1">{keyText}</span>}
+                </span>
+              </div>
+              <span className="text-muted-foreground ml-2 opacity-70 shrink-0">{c.dataType}</span>
+            </div>
+          );
+        })}
+        {t.columns.length > 10 && (
+          <div className="px-3 py-1.5 text-muted-foreground italic">+{t.columns.length - 10} more</div>
         )}
       </div>
     </div>
