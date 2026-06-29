@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useMigration } from "@/lib/migration/store";
-import { generateRuleBookViaAi } from "@/lib/migration/gemini";
 import { Loader2, Sparkles, FileText, AlertCircle } from "lucide-react";
 
 export function Stage2RuleBook({ onNext }: { onNext: () => void }) {
@@ -15,14 +14,43 @@ export function Stage2RuleBook({ onNext }: { onNext: () => void }) {
     setStageStatus(2, "in-progress");
 
     try {
-      const compiledRuleBook = await generateRuleBookViaAi(requirement);
+      const compiledRuleBook = `# Qlik to Power BI Migration Rule Book
+
+## Report Name
+${requirement.reportName || ""}
+
+## Business Objective
+${requirement.businessObjective || ""}
+
+## Business Requirement
+${requirement.businessRequirement || ""}
+
+## Source Tables
+${requirement.sourceTableNames || ""}
+
+## Source Columns
+${requirement.sourceColumnNames || ""}
+
+## Expected Output
+${requirement.expectedOutput || ""}
+
+## Migration Rules
+
+- Analyze the uploaded Source QVS.
+- Analyze the uploaded ETL QVS.
+- Preserve the complete ETL logic.
+- Detect the final surviving tables.
+- Generate Power Query only for the final tables.
+- Convert Qlik Set Analysis to Power BI DAX.
+- Generate the Power BI semantic model.
+- Create a Calendar table only if one does not exist.`;
       
-      // Save AI Response directly into the main state store
+      // Save Response directly into the main state store
       useMigration.setState({ ruleBookMd: compiledRuleBook });
       
       setStageStatus(2, "complete", 100);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to compile Migration Rule Book via Gemini API.";
+      const msg = err instanceof Error ? err.message : "Failed to compile Migration Rule Book.";
       setError(msg);
       setStageStatus(2, "pending");
     } finally {
@@ -34,7 +62,7 @@ export function Stage2RuleBook({ onNext }: { onNext: () => void }) {
     <div className="space-y-6">
       <div className="surface-card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h3 className="font-display text-xl font-semibold">AI Rules Compilation Engine</h3>
+          <h3 className="font-display text-xl font-semibold">Rules Compilation Engine</h3>
           <p className="text-sm text-muted-foreground">Analyze business requirements and generate structural mapping rule directives.</p>
         </div>
         <button
@@ -50,7 +78,7 @@ export function Stage2RuleBook({ onNext }: { onNext: () => void }) {
       {error && (
         <div className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 text-sm flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-          <div><span className="font-semibold">API Execution Halted:</span> {error}</div>
+          <div><span className="font-semibold">Execution Halted:</span> {error}</div>
         </div>
       )}
 

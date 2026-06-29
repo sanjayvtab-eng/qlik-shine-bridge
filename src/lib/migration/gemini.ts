@@ -13,7 +13,7 @@ const getApiKey = (): string => {
     if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
     if (import.meta.env.GEMINI_API_KEY) return import.meta.env.GEMINI_API_KEY;
   }
-  return "";
+  return "YOUR_GEMINI_API_KEY";
 };
 
 /**
@@ -138,52 +138,45 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, in
  * STAGE 2: Compiles user business requirements into a structured technical Markdown Rule Book.
  */
 export async function generateRuleBookViaAi(requirement: Requirement): Promise<string> {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("Gemini API key configuration error.");
+  // Use static template instead of AI generation
+  const template = `# Qlik to Power BI Migration Rule Book
 
-  const prompt = `
-    You are an expert Enterprise Solutions Architect specializing in migrations from QlikView/Qlik Sense to Power BI.
-    Analyze the following business migration requirements and compile a definitive, highly technical Migration Rule Book in Markdown format.
-    
-    ### Requirements Specifications:
-    - Report Name: ${requirement.reportName}
-    - Business Objective: ${requirement.businessObjective}
-    - Business Requirement: ${requirement.businessRequirement}
-    - Expected Target Output: ${requirement.expectedOutput}
-    - Identified Source Tables: ${requirement.sourceTableNames}
-    - Identified Source Columns: ${requirement.sourceColumnNames}
-    - Sample Data Ingestion Context: ${requirement.sampleData}
+## Report Name
+{{ReportName}}
 
-    ### Your Generated Rule Book Must explicitly define:
-    1. Table Classification Strategy: Rules for establishing Fact, Dimension, Calendar, and Mapping tables.
-    2. Naming Standards: Definitive guidelines for field name mapping and case alignment.
-    3. Type Conversions: Precise type handling rules (e.g., converting Qlik dual-types to native Power BI data types).
-    4. Complex Conversions: Step-by-step resolution of Qlik specific logic like Peek(), Previous(), AutoNumber(), and multi-nested IF conditional syntax into valid Power Query / DAX alternatives.
-    5. Structural Keys: Rules for identifying join keys directly from code patterns rather than generic name guessing.
-  `;
+## Business Objective
+{{BusinessObjective}}
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ACTIVE_MODEL}:generateContent?key=${apiKey}`;
-  const response = await fetchWithRetry(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1 }
-    })
-  });
+## Business Requirement
+{{BusinessRequirement}}
 
-  if (!response.ok) {
-    const errorDetails = await response.text();
-    throw new Error(`Gemini API Error (Stage 2 Rule Book Compilation): ${response.status} - ${errorDetails}`);
-  }
+## Source Tables
+{{SourceTableNames}}
 
-  const resultBody = await response.json();
-  const ruleBookMarkdown = resultBody?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!ruleBookMarkdown) {
-    throw new Error("Gemini API returned an empty response string during Rule Book compilation.");
-  }
+## Source Columns
+{{SourceColumnNames}}
 
-  return ruleBookMarkdown;
+## Expected Output
+{{ExpectedOutput}}
+
+## Migration Rules
+
+- Analyze the uploaded Source QVS.
+- Analyze the uploaded ETL QVS.
+- Preserve the complete ETL logic.
+- Detect the final surviving tables.
+- Generate Power Query only for the final tables.
+- Convert Qlik Set Analysis to Power BI DAX.
+- Generate the Power BI semantic model.
+- Create a Calendar table only if one does not exist.`;
+
+  return template
+    .replace("{{ReportName}}", requirement.reportName || "—")
+    .replace("{{BusinessObjective}}", requirement.businessObjective || "—")
+    .replace("{{BusinessRequirement}}", requirement.businessRequirement || "—")
+    .replace("{{SourceTableNames}}", requirement.sourceTableNames || "—")
+    .replace("{{SourceColumnNames}}", requirement.sourceColumnNames || "—")
+    .replace("{{ExpectedOutput}}", requirement.expectedOutput || "—");
 }
 
 /**

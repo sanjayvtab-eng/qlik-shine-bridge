@@ -132,7 +132,7 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
                 <Download className="h-4 w-4" /> Download scripts
               </button>
               <button onClick={onNext} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
-                Continue to DAX Measures <ArrowRight className="h-4 w-4" />
+                Continue to Semantic Model <ArrowRight className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -171,6 +171,19 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
             )}
           </div>
         </>
+      )}
+
+      {generated && queries.length === 0 && (
+        <div className="surface-card p-6 flex flex-col items-center justify-center text-center border border-border rounded-xl mt-6">
+          <AlertCircle className="h-10 w-10 text-muted-foreground mb-3" />
+          <h3 className="font-display text-xl font-semibold">No Queries Generated</h3>
+          <p className="text-sm text-muted-foreground mb-4 max-w-md mx-auto">
+            No valid final tables were detected to generate Power Query scripts for.
+          </p>
+          <button onClick={onNext} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
+            Skip to Semantic Model <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
       )}
     </div>
   );

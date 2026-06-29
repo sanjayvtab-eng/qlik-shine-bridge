@@ -42,8 +42,8 @@ function Migration() {
         {active === 2 && <Stage2RuleBook onNext={next} />}
         {active === 3 && <Stage3AiAnalysis onNext={next} />}
         {active === 4 && <Stage4PowerQuery onNext={next} />}
-        {active === 5 && <Stage5Dax onNext={next} />}
-        {active === 6 && <Stage6Model />}
+        {active === 5 && <Stage6Model onNext={next} />}
+        {active === 6 && <Stage5Dax />}
 
         <FooterSteps />
       </main>
@@ -92,7 +92,7 @@ function FooterSteps() {
   const steps = [
     { n: "01", k: "CAPTURE", title: "Requirement → Rule Book", body: "Capture business intent and auto-generate a Markdown Rule Book that drives the rest of the migration." },
     { n: "02", k: "CONVERT", title: "Script to Power Query M", body: "Source &amp; ETL QVS parsed, then Power Query produced only for the final surviving tables." },
-    { n: "03", k: "DEPLOY", title: "DAX &amp; Semantic Model", body: "Variables resolved, Set Analysis translated to DAX, star-schema model auto-built for review." },
+    { n: "03", k: "DEPLOY", title: "Semantic Model &amp; DAX", body: "Star-schema model auto-built for review, then variables resolved and Set Analysis translated to DAX." },
   ];
   return (
     <section className="grid md:grid-cols-3 gap-px bg-border mt-16 rounded-2xl overflow-hidden border border-border">

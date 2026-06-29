@@ -26,14 +26,14 @@ const PHASE_LABEL: Record<Phase, string> = {
   "completed": "Completed",
 };
 
-export function Stage5Dax({ onNext }: { onNext: () => void }) {
+export function Stage5Dax({ onNext }: { onNext?: () => void }) {
   const {
     finalTables, variables, setAnalysisRows,
     stageStatus,
     setSetAnalysis, setVariableLogic, setStageStatus,
   } = useMigration();
 
-  const stage4Done = stageStatus[4] === "complete";
+  const stage5Done = stageStatus[5] === "complete";
 
   const [engine, setEngine] = useState<"heuristic" | "gemini">("heuristic");
   const [setRaw, setSetRaw] = useState<{ name: string; text: string } | null>(null);
@@ -45,11 +45,11 @@ export function Stage5Dax({ onNext }: { onNext: () => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  if (!stage4Done || !finalTables.length) {
+  if (!stage5Done || !finalTables.length) {
     return (
       <div className="surface-card p-12 text-center">
         <AlertCircle className="h-10 w-10 mx-auto text-warning mb-3" />
-        <div className="font-semibold">Generate Power Query in Stage 4 before producing DAX.</div>
+        <div className="font-semibold">Review Semantic Model in Stage 5 before producing DAX.</div>
       </div>
     );
   }
@@ -101,7 +101,11 @@ export function Stage5Dax({ onNext }: { onNext: () => void }) {
 
       let out = "";
       if (engine === "gemini") {
-        out = await generateDaxMeasuresWithGemini({ tables: state.finalTables, variables: combined });
+        out = await generateDaxMeasuresWithGemini(
+          state.requirement!,
+          state.ruleBookMd!,
+          state.technicalMetadata!
+        );
       } else {
         await new Promise((r) => setTimeout(r, 400));
         out = generateDaxMeasures(state.finalTables, combined);
@@ -115,7 +119,7 @@ export function Stage5Dax({ onNext }: { onNext: () => void }) {
       const todos = lines.filter((l) => l.includes("TODO") || l.includes("Review required")).length;
       const measures = (out.match(/^\[.+\] =$/gm) || []).length || 1;
       const score = Math.max(0, Math.round((1 - todos / measures) * 100));
-      setStageStatus(5, "complete", Math.min(100, score));
+      setStageStatus(6, "complete", Math.min(100, score));
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "DAX generation failed.");
@@ -253,9 +257,11 @@ export function Stage5Dax({ onNext }: { onNext: () => void }) {
               <button onClick={download} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-surface text-sm font-medium">
                 <Download className="h-4 w-4" /> Download .dax
               </button>
-              <button onClick={onNext} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
-                View semantic model <ArrowRight className="h-4 w-4" />
-              </button>
+              {onNext && (
+                <button onClick={onNext} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
+                  Next step <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
             </div>
           </div>
 

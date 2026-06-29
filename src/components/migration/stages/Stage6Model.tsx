@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useMigration } from "@/lib/migration/store";
-import { AlertCircle, Maximize2, Calendar, Layers } from "lucide-react";
+import { AlertCircle, Maximize2, Calendar, Layers, ArrowRight } from "lucide-react";
 import type { FinalTable } from "@/lib/migration/types";
 
 function tableColor(t: FinalTable) {
@@ -9,7 +9,7 @@ function tableColor(t: FinalTable) {
   return "from-[oklch(0.65_0.14_220)] to-[oklch(0.55_0.16_240)]";
 }
 
-export function Stage6Model() {
+export function Stage6Model({ onNext }: { onNext?: () => void }) {
   const { finalTables, relationships, setStageStatus } = useMigration();
 
   const allTables: FinalTable[] = useMemo(() => {
@@ -39,17 +39,10 @@ export function Stage6Model() {
     const score = facts && dims
       ? Math.round(((relationships.length || 1) / (facts * Math.max(1, dims)) * 50) + 50)
       : 40;
-    setStageStatus(6, "complete", Math.min(100, score));
+    setStageStatus(5, "complete", Math.min(100, score));
   }, [allTables, relationships, setStageStatus]);
 
-  if (!finalTables.length) {
-    return (
-      <div className="surface-card p-12 text-center">
-        <AlertCircle className="h-10 w-10 mx-auto text-warning mb-3" />
-        <div className="font-semibold">Awaiting Migration Analysis — complete Stage 3.</div>
-      </div>
-    );
-  }
+
 
   const facts = allTables.filter((t) => t.type === "Fact");
   const others = allTables.filter((t) => t.type !== "Fact");
@@ -64,9 +57,16 @@ export function Stage6Model() {
               {allTables.length} tables • {relationships.length} relationships • star schema layout
             </p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-surface text-sm font-medium">
-            <Maximize2 className="h-4 w-4" /> Full screen
-          </button>
+          <div className="flex items-center gap-2">
+            <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-border bg-surface text-sm font-medium">
+              <Maximize2 className="h-4 w-4" /> Full screen
+            </button>
+            {onNext && (
+              <button onClick={onNext} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium">
+                DAX Measures <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -7,8 +7,8 @@ export const STAGES = [
   { id: 2, label: "Rule Book" },
   { id: 3, label: "AI Analysis" },
   { id: 4, label: "Power Query" },
-  { id: 5, label: "DAX Measures" },
-  { id: 6, label: "Semantic Model" },
+  { id: 5, label: "Semantic Model" },
+  { id: 6, label: "DAX Measures" },
 ] as const;
 
 interface Props {
