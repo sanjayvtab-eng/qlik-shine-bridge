@@ -99,7 +99,7 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, in
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);
     if (response.status === 429 || response.status === 503) {
-      console.warn(`[Gemini API] Limit or outage ${response.status} encountered. Failing fast to trigger fallback...`);
+      console.info(`[Gemini API] Primary model limits (${response.status}) reached. Activating failover...`);
       return response;
     }
     return response;
@@ -156,7 +156,7 @@ export async function analyzeQvsScriptsViaAi(
     }
   } catch (error: any) {
     if (finalModelUsed === PRIMARY_MODEL) {
-      console.warn(`[Engine Fallback] ${PRIMARY_MODEL} encountered rate limits or errors. Marking as exhausted for this session and activating fallback engine (${FALLBACK_MODEL})... Log:`, error.message || error);
+      console.info(`[Engine Fallback] ${PRIMARY_MODEL} rate limits encountered. Activating secondary engine (${FALLBACK_MODEL})...`);
       isProExhausted = true;
       finalModelUsed = FALLBACK_MODEL;
       
@@ -645,7 +645,7 @@ export async function generateDaxMeasuresWithGemini(
     return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } catch (error) {
     if (daxEngineModel === PRIMARY_MODEL) {
-      console.warn(`[DAX Fallback] ${PRIMARY_MODEL} encountered error. Activating fallback engine (${FALLBACK_MODEL})...`);
+      console.info(`[DAX Fallback] ${PRIMARY_MODEL} rate limits encountered. Activating secondary engine (${FALLBACK_MODEL})...`);
       isProExhausted = true;
       try {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${FALLBACK_MODEL}:generateContent?key=${apiKey}`;

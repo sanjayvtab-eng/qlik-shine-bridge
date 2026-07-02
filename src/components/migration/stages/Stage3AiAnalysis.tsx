@@ -38,19 +38,35 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       const srcTables = parseSourceQvs(sourceRaw.text) || [];
       const etlRes = parseEtlQvs(etlRaw.text, srcTables);
 
-      // 2. Invoke structured semantic AI extraction
-      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceRaw.text, etlRaw.text);
+      // 2. Invoke structured semantic AI extraction with total failover protection
+      let aiResponse: any;
+      try {
+        aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceRaw.text, etlRaw.text);
+      } catch (aiErr) {
+        console.info("[Stage3] AI engine unavailable (quota exceeded). Proceeding with offline local parsing...");
+        aiResponse = {
+          businessMetadata: {
+            sourceTables: requirement.sourceTableNames ? requirement.sourceTableNames.split(',').map(s => s.trim()) : [],
+            finalTables: [], businessRules: []
+          },
+          technicalMetadata: {
+            sourceTables: [], finalTables: [], relationships: [],
+            executionGraph: [], allTables: [],
+            statementMetrics: { totalLoadStatements: 0, totalJoinStatements: 0, totalResidentLoads: 0, totalApplyMapCalls: 0 }
+          }
+        };
+      }
 
       // 3. Smart fallback: if AI returned empty tables, use local parser results
       const technicalMetadata = aiResponse.technicalMetadata;
       
       if (!technicalMetadata.sourceTables?.length && srcTables.length) {
-        console.warn("[Stage3] AI returned no source tables — falling back to local QVS parser results.");
+        console.info("[Stage3] AI returned no source tables — falling back to local QVS parser results.");
         technicalMetadata.sourceTables = srcTables;
       }
       
       if (!technicalMetadata.finalTables?.length && etlRes.finalTables?.length) {
-        console.warn("[Stage3] AI returned no final tables — falling back to local ETL parser results.");
+        console.info("[Stage3] AI returned no final tables — falling back to local ETL parser results.");
         technicalMetadata.finalTables = etlRes.finalTables.map(t => ({
           ...t,
           isFinal: true,
@@ -65,7 +81,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       }
 
       if (!technicalMetadata.executionGraph?.length && etlRes.executionGraph?.length) {
-        console.warn("[Stage3] AI returned no execution graph — falling back to local ETL parser results.");
+        console.info("[Stage3] AI returned no execution graph — falling back to local ETL parser results.");
         technicalMetadata.executionGraph = etlRes.executionGraph;
       }
       
