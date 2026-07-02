@@ -610,6 +610,9 @@ async function analyzeStage3B(
   return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
 }
 
+import qlikToPbiCompleteRulebook from './docs/Qlik_to_PowerBI_Complete_Rulebook.md?raw';
+import qlikToPbiEquivalentReference from './docs/Qlik_to_PowerBI_Equivalent_Reference_v2.md?raw';
+
 export async function generatePowerQueryViaAi(
   businessMetadata: BusinessMetadata,
   technicalMetadata: TechnicalMetadata,
@@ -620,10 +623,16 @@ export async function generatePowerQueryViaAi(
 
   const prompt = `
     You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler. 
-    Your ONLY source of truth is the Migration Rule Book. You must generate production-ready Power Query M code for the final surviving tables based on the execution graph.
+    Your ONLY source of truth is the Migration Rule Book and the supplementary knowledge files provided below. You must generate production-ready Power Query M code for the final surviving tables based on the execution graph.
     
-    ### MIGRATION RULE BOOK GUIDELINES:
+    ### MIGRATION RULE BOOK GUIDELINES (Specific to this migration):
     ${ruleBookMd}
+
+    ### SUPPLEMENTARY KNOWLEDGE BASE (Qlik to Power BI Equivalents):
+    ${qlikToPbiEquivalentReference}
+
+    ### COMPLETE RULEBOOK REFERENCE (General Translation Rules):
+    ${qlikToPbiCompleteRulebook}
 
     ### CORE OBJECTIVES:
     1. Iterate over every final table defined in the Technical Metadata.
