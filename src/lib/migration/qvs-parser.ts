@@ -1,6 +1,6 @@
 import type {
-  SourcePlatform, SourceTable, SourceColumn, EtlOperation,
-  FinalTable, Relationship, TableStep,
+  DataType, SourcePlatform, SourceTable, SourceColumn, EtlOperation,
+  FinalTable, Relationship, TableStep, ExecutionNode
 } from "./types";
 
 let _id = 0;
@@ -24,7 +24,7 @@ const PLATFORM_HINTS: { match: RegExp; platform: SourcePlatform }[] = [
 ];
 
 function detectPlatform(text: string): SourcePlatform {
-  for (const { match, platform } of PLATFORM_HINTS) if (match.test(text)) return platform;
+  for (const h of PLATFORM_HINTS) if (h.match.test(text)) return h.platform;
   if (/^SQL:/i.test(text)) return "SQL Server";
   if (/\bSQL\s+SELECT\b/i.test(text)) return "SQL Server";
   return "Unknown";
@@ -34,7 +34,7 @@ function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/^\s*REM\s.*$/gim, "");
+    .replace(/^\s*REM\s.*$/gim);
 }
 
 interface FieldExpr { name: string; expr?: string; alias?: boolean; }
@@ -72,31 +72,27 @@ function parseFieldExpr(raw: string): FieldExpr | null {
   if (!s) return null;
   if (/^(LOAD|SQL|RESIDENT|FROM|WHERE|GROUP|ORDER|MAPPING)\b/i.test(s)) return null;
   if (s === "*") return { name: "*" };
-  // alias: "expr AS name" or "expr as [name]" (handle case-insensitively, last AS at top level)
   const asMatch = s.match(/^([\s\S]+?)\s+AS\s+\[?([A-Za-z0-9_ #]+?)\]?\s*$/i);
   if (asMatch) {
     const expr = asMatch[1].trim();
     const name = asMatch[2].trim();
-    // Pure field reference?
     if (/^\[?[A-Za-z0-9_ ]+\]?$/.test(expr) && expr.replace(/[\[\]]/g, "").trim() === name) {
       return { name };
     }
     return { name, expr, alias: true };
   }
-  // plain field
   const bare = s.replace(/^\[|\]$/g, "").trim();
   if (!/^[A-Za-z_][A-Za-z0-9_ ]*$/.test(bare)) {
-    // expression without alias — synthesize name
     return { name: `Calc${Math.floor(Math.random() * 1e4)}`, expr: s, alias: true };
   }
   return { name: bare };
 }
 
 function parseFieldList(body: string): FieldExpr[] {
-  return splitTopLevel(body).map(parseFieldExpr).filter(Boolean) as FieldExpr[];
+  return splitTopLevel(body).map((item: string) => parseFieldExpr(item)).filter(Boolean) as FieldExpr[];
 }
 
-function inferTypeForField(f: FieldExpr): string {
+function inferTypeForField(f: FieldExpr): DataType {
   const s = (f.expr || f.name).toLowerCase();
   if (/\bif\s*\([^)]*['"][^'"]+['"]/.test(s)) return "String";
   if (/\bdate#|\bdate\(|today\(|year\(|month\(|monthstart|day\(|orderdate|shipdate|invoice.?date|created.?date/.test(s)) return "Date";
@@ -109,13 +105,12 @@ function inferTypeForField(f: FieldExpr): string {
 
 interface Statement {
   raw: string;
-  prefixes: string[]; // tokens before LOAD/SQL: MAPPING, LEFT JOIN(T), CONCATENATE(T), KEEP(T), NOCONCATENATE
+  prefixes: string[]; 
   tableLabel?: string;
-  body: string;       // after table label, includes LOAD ... etc
+  body: string;       
 }
 
 function splitStatements(src: string): Statement[] {
-  // Split on ; at top level (respect quotes)
   const stmts: string[] = [];
   let depth = 0, inStr: string | null = null, cur = "";
   for (let i = 0; i < src.length; i++) {
@@ -133,7 +128,6 @@ function splitStatements(src: string): Statement[] {
   for (const s of stmts) {
     const trimmed = s.trim();
     if (!trimmed) continue;
-    // Table label
     const labelMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([\s\S]+)$/);
     let body = trimmed;
     let tableLabel: string | undefined;
@@ -141,7 +135,6 @@ function splitStatements(src: string): Statement[] {
       tableLabel = labelMatch[1];
       body = labelMatch[2];
     }
-    // Extract prefixes (before LOAD/SQL/SELECT)
     const prefixes: string[] = [];
     const prefixRegex = /^\s*(MAPPING|NOCONCATENATE|(?:LEFT|RIGHT|INNER|OUTER)\s+(?:JOIN|KEEP)|JOIN|KEEP|CONCATENATE|ADD|REPLACE|BUFFER)\s*(?:\(\s*[A-Za-z0-9_]+\s*\))?\s*/i;
     while (true) {
@@ -158,11 +151,10 @@ function splitStatements(src: string): Statement[] {
 function parseLoadBody(body: string): ParsedLoadBody {
   const isSql = /^\s*SQL\s+/i.test(body) || /^\s*SELECT\s+/i.test(body);
   if (isSql) {
-    // SQL SELECT ... FROM ... WHERE ...
     const sql = body.replace(/^\s*SQL\s+/i, "").trim();
     const sel = sql.match(/^SELECT\s+([\s\S]+?)\s+FROM\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?$/i);
     if (sel) {
-      const fields = sel[1].split(",").map((c) => {
+      const fields = sel[1].split(",").map((c: string) => {
         const a = c.trim().match(/^([\s\S]+?)(?:\s+AS\s+([A-Za-z0-9_]+))?$/i);
         const name = a?.[2] || a?.[1]?.replace(/.*\./, "").trim() || c.trim();
         return { name } as FieldExpr;
@@ -208,23 +200,6 @@ function isWildcardField(f: FieldExpr): boolean {
   return f.name === "*";
 }
 
-function addColumns(target: FinalTable, fields: FieldExpr[]) {
-  for (const f of fields) {
-    if (isWildcardField(f)) continue;
-    if (!target.columns.find((c) => c.name === f.name)) {
-      target.columns.push({
-        name: f.name,
-        dataType: inferTypeForField(f),
-        derived: !!f.expr && !/^\[?[A-Za-z_][A-Za-z0-9_ ]*\]?$/.test(f.expr),
-        expression: f.expr,
-      });
-    }
-  }
-  target.keys = target.columns
-    .map((c) => c.name)
-    .filter((n) => /(_id|Id|Key|_KEY)$/.test(n) || /^id$/i.test(n));
-}
-
 function parsePrefixTarget(prefix: string): string | undefined {
   const m = prefix.match(/\(\s*([A-Za-z0-9_]+)\s*\)/);
   return m?.[1];
@@ -256,7 +231,9 @@ export function parseSourceQvs(text: string): SourceTable[] {
     const filePath = (body.from.match(/([A-Za-z]:[\\\/][^\s\)]+|\/[^\s\)]+|lib:\/\/[^\s\)]+)/i) || [])[1];
     const sql = inferSqlParts(body.from);
     const name = s.tableLabel || sql.table || qvdName?.replace(/\.qvd$/i, "") || `Table_${++idx}`;
-    const columns: SourceColumn[] = body.fields.filter((f) => !isWildcardField(f)).map((f) => ({ name: f.name, dataType: inferTypeForField(f) }));
+    const columns: SourceColumn[] = body.fields
+      .filter((f: FieldExpr) => !isWildcardField(f))
+      .map((f: FieldExpr) => ({ name: f.name, dataType: inferTypeForField(f) }));
     tables.push({
       id: uid("src"), name, platform, database: sql.database, schema: sql.schema,
       connectionName: currentConnection,
@@ -276,6 +253,7 @@ export interface EtlAnalysisResult {
   droppedTables: string[];
   intermediateTables: string[];
   variables: Record<string, string>;
+  executionGraph: ExecutionNode[]; 
 }
 
 export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): EtlAnalysisResult {
@@ -285,32 +263,19 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
   const dropped = new Set<string>();
   const renamesTable: Record<string, string> = {};
   const tables = new Map<string, FinalTable>();
-  const mappings = new Map<string, { keyField: string; valueField: string }>();
+  const mappings = new Map<string, { keyField: string; valueField: string; tableNodeId: string }>();
+  const executionGraph: ExecutionNode[] = [];
+  
   let lastTable: string | undefined;
   let currentConnection: string | undefined;
+  let sequenceCounter = 0;
 
-  // Vars
   for (const m of src.matchAll(/SET\s+([A-Za-z0-9_]+)\s*=\s*([^;]+);/gi)) variables[m[1]] = m[2].trim();
   for (const m of src.matchAll(/LET\s+([A-Za-z0-9_]+)\s*=\s*([^;]+);/gi)) variables[m[1]] = m[2].trim();
 
-  // Top-level non-LOAD ops (drop / rename / store) — scanned globally first
-  for (const m of src.matchAll(/DROP\s+TABLE[S]?\s+([A-Za-z0-9_, ]+);/gi)) {
-    for (const n of m[1].split(",").map((s) => s.trim())) {
-      dropped.add(n);
-      ops.push({ kind: "DROP", table: n, raw: m[0] });
-    }
-  }
-  for (const m of src.matchAll(/RENAME\s+TABLE\s+([A-Za-z0-9_]+)\s+TO\s+([A-Za-z0-9_]+);/gi)) {
-    renamesTable[m[1]] = m[2];
-    ops.push({ kind: "RENAME_TABLE", table: m[1], target: m[2], raw: m[0] });
-  }
-  for (const m of src.matchAll(/STORE\s+([A-Za-z0-9_]+)\s+INTO/gi)) {
-    ops.push({ kind: "STORE", table: m[1], raw: m[0] });
-  }
-
   const stmts = splitStatements(src);
 
-  const ensure = (name: string, type: FinalTable["type"] = "Dimension"): FinalTable => {
+  const ensureTableState = (name: string, type: FinalTable["type"] = "Dimension"): FinalTable => {
     if (!tables.has(name)) {
       tables.set(name, {
         id: uid("ft"), name, type, columns: [], sourceTables: [], isFinal: true, steps: [], keys: [], lineage: [],
@@ -319,50 +284,32 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
     return tables.get(name)!;
   };
 
+  const getLatestTableNodeId = (tableName: string): string => {
+    const nodes = executionGraph.filter((n: ExecutionNode) => n.outputTable === tableName);
+    return nodes.length > 0 ? nodes[nodes.length - 1].id : "root_origin";
+  };
+
   const findSourceColumns = (from?: string, resident?: string): FieldExpr[] => {
     if (resident) {
       const rt = tables.get(resident);
-      return rt?.columns.map((c) => ({ name: c.name })) ?? [];
+      return rt?.columns.map((c: { name: string }) => ({ name: c.name })) ?? [];
     }
     if (!from) return [];
     const clean = from.toLowerCase();
-    const match = sourceTables.find((s) => {
-      const tokens = [s.name, s.qvdName, s.filePath, s.connectionPath, s.sourceQuery].filter(Boolean).map((x) => String(x).toLowerCase());
-      return tokens.some((token) => clean.includes(token) || token.includes(clean.slice(0, 80)));
+    const match = sourceTables.find((s: SourceTable) => {
+      const tokens = [s.name, s.qvdName, s.filePath, s.connectionPath, s.sourceQuery].filter(Boolean).map((x: any) => String(x).toLowerCase());
+      return tokens.some((token: string) => clean.includes(token) || token.includes(clean.slice(0, 80)));
     });
-    return match?.columns.map((c) => ({ name: c.name })) ?? [];
+    return match?.columns.map((c: SourceColumn) => ({ name: c.name })) ?? [];
   };
 
   const expandWildcards = (body: ParsedLoadBody): FieldExpr[] => {
-    if (!body.fields.some(isWildcardField)) return body.fields;
+    if (!body.fields.some((f: FieldExpr) => isWildcardField(f))) return body.fields;
     const expanded = findSourceColumns(body.from, body.resident);
     return [
-      ...body.fields.filter((f) => !isWildcardField(f)),
-      ...expanded.filter((f) => !body.fields.some((existing) => existing.name === f.name)),
+      ...body.fields.filter((f: FieldExpr) => !isWildcardField(f)),
+      ...expanded.filter((f: FieldExpr) => !body.fields.some((existing: FieldExpr) => existing.name === f.name)),
     ];
-  };
-
-  const appendFieldSteps = (t: FinalTable, fields: FieldExpr[]) => {
-    for (const f of fields) {
-      if (!f.expr) continue;
-      const applyMap = f.expr.match(/ApplyMap\s*\(\s*['"]?([^,'"]+)['"]?\s*,\s*([^,\)]+)(?:,\s*([^\)]+))?\)/i);
-      if (applyMap) {
-        t.steps!.push({
-          kind: "APPLYMAP",
-          mapName: applyMap[1].trim(),
-          sourceField: applyMap[2].replace(/[\[\]]/g, "").trim(),
-          asField: f.name,
-          defaultValue: applyMap[3]?.trim(),
-        });
-        continue;
-      }
-      const simple = f.expr.replace(/[\[\]]/g, "").trim();
-      if (/^[A-Za-z_][A-Za-z0-9_ ]*$/.test(simple) && simple !== f.name) {
-        t.steps!.push({ kind: "RENAME_FIELD", from: simple, to: f.name });
-      } else {
-        t.steps!.push({ kind: "DERIVED", name: f.name, expression: f.expr });
-      }
-    }
   };
 
   for (const s of stmts) {
@@ -371,16 +318,62 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
       currentConnection = connection;
       continue;
     }
+
+    const globalDropMatch = s.raw.match(/^DROP\s+TABLE[S]?\s+([A-Za-z0-9_, ]+)/i);
+    if (globalDropMatch) {
+      for (const n of globalDropMatch[1].split(",").map((t: string) => t.trim())) {
+        dropped.add(n);
+        ops.push({ kind: "DROP", table: n, raw: s.raw });
+
+        executionGraph.push({
+          id: uid("node"),
+          operation: "DROP" as any,
+          sequenceOrder: ++sequenceCounter,
+          inputNodes: [getLatestTableNodeId(n)],
+          outputTable: n,
+          meta: { isDropped: true },
+          rawExpression: s.raw.slice(0, 120)
+        });
+      }
+      continue;
+    }
+
+    const globalRenameMatch = s.raw.match(/^RENAME\s+TABLE\s+([A-Za-z0-9_]+)\s+TO\s+([A-Za-z0-9_]+)/i);
+    if (globalRenameMatch) {
+      const fromTable = globalRenameMatch[1].trim();
+      const toTable = globalRenameMatch[2].trim();
+      renamesTable[fromTable] = toTable;
+      ops.push({ kind: "RENAME_TABLE", table: fromTable, target: toTable, raw: s.raw });
+
+      executionGraph.push({
+        id: uid("node"),
+        operation: "RENAME_TABLE" as any,
+        sequenceOrder: ++sequenceCounter,
+        inputNodes: [getLatestTableNodeId(fromTable)],
+        outputTable: toTable,
+        meta: { fromTable, toTable },
+        rawExpression: s.raw.slice(0, 120)
+      });
+      continue;
+    }
+
+    const globalStoreMatch = s.raw.match(/^STORE\s+([A-Za-z0-9_]+)\s+INTO/i);
+    if (globalStoreMatch) {
+      const storeTarget = globalStoreMatch[1].trim();
+      ops.push({ kind: "STORE", table: storeTarget, raw: s.raw });
+      continue;
+    }
+
     const body = parseLoadBody(s.body);
     if (!body.fields.length && !body.from && !body.resident) continue;
+    
     const fields = expandWildcards(body);
 
-    const isMapping = s.prefixes.some((p) => /^MAPPING$/i.test(p));
-    const joinPrefix = s.prefixes.find((p) => /JOIN/i.test(p));
-    const keepPrefix = s.prefixes.find((p) => /KEEP/i.test(p));
-    const concatPrefix = s.prefixes.find((p) => /^CONCATENATE/i.test(p));
+    const isMapping = s.prefixes.some((p: string) => /^MAPPING$/i.test(p));
+    const joinPrefix = s.prefixes.find((p: string) => /JOIN/i.test(p));
+    const keepPrefix = s.prefixes.find((p: string) => /KEEP/i.test(p));
+    const concatPrefix = s.prefixes.find((p: string) => /^CONCATENATE/i.test(p));
 
-    // Pure RENAME FIELD statement
     const renameFieldMatch = s.raw.match(/^RENAME\s+FIELD[S]?\s+([\s\S]+)$/i);
     if (renameFieldMatch) {
       const pairs = splitTopLevel(renameFieldMatch[1]);
@@ -389,9 +382,21 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
         if (pm && lastTable) {
           const t = tables.get(lastTable);
           if (t) {
-            t.steps!.push({ kind: "RENAME_FIELD", from: pm[1], to: pm[2] });
-            const c = t.columns.find((x) => x.name === pm[1]);
-            if (c) c.name = pm[2];
+            const originalField = pm[1].trim();
+            const targetField = pm[2].trim();
+            t.steps!.push({ kind: "RENAME_FIELD", from: originalField, to: targetField });
+            const c = t.columns.find((x: { name: string }) => x.name === originalField);
+            if (c) c.name = targetField;
+
+            executionGraph.push({
+              id: uid("node"),
+              operation: "RENAME_FIELD",
+              sequenceOrder: ++sequenceCounter,
+              inputNodes: [getLatestTableNodeId(lastTable)],
+              outputTable: lastTable,
+              meta: { originalField, targetField },
+              rawExpression: p.trim()
+            });
           }
           ops.push({ kind: "RENAME_FIELD", table: lastTable, raw: p });
         }
@@ -399,101 +404,252 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
       continue;
     }
 
-    // MAP ... USING ... → ApplyMap
     const mapUsing = s.raw.match(/MAP\s+([A-Za-z0-9_,\s]+)\s+USING\s+([A-Za-z0-9_]+)/i);
     if (mapUsing) {
-      const target = lastTable;
-      if (target) {
-        for (const f of mapUsing[1].split(",").map((x) => x.trim())) {
-          tables.get(target)?.steps!.push({
-            kind: "APPLYMAP", mapName: mapUsing[2], sourceField: f, asField: f,
+      const mappingTable = mapUsing[2].trim();
+      if (lastTable) {
+        for (const f of mapUsing[1].split(",").map((x: string) => x.trim())) {
+          const mapMeta = mappings.get(mappingTable);
+          tables.get(lastTable)?.steps!.push({
+            kind: "APPLYMAP", mapName: mappingTable, sourceField: f, asField: f,
+          });
+
+          executionGraph.push({
+            id: uid("node"),
+            operation: "APPLYMAP",
+            sequenceOrder: ++sequenceCounter,
+            inputNodes: [getLatestTableNodeId(lastTable), mapMeta?.tableNodeId || "root_origin"],
+            outputTable: lastTable,
+            meta: {
+              mappingTableName: mappingTable,
+              lookupKeyField: f,
+              resultColumn: f,
+              sourceField: mapMeta?.keyField,
+              targetValueField: mapMeta?.valueField
+            },
+            rawExpression: `Implicit map mapping: ${f} via ${mappingTable}`
           });
         }
       }
-      ops.push({ kind: "APPLYMAP", table: mapUsing[2], raw: s.raw.slice(0, 200) });
+      ops.push({ kind: "APPLYMAP", table: mappingTable, raw: s.raw.slice(0, 120) });
       continue;
     }
 
     if (isMapping) {
-      // MAPPING LOAD key, value FROM/RESIDENT ...
       const name = s.tableLabel || `Map_${tables.size + 1}`;
-      const t = ensure(name, "Mapping");
+      const t = ensureTableState(name, "Mapping");
       t.type = "Mapping";
       t.isFinal = false;
-      t.columns = fields.map((f) => ({ name: f.name, dataType: inferTypeForField(f) }));
+      t.columns = fields.map((f: FieldExpr) => ({ name: f.name, dataType: inferTypeForField(f), derived: false }));
+      
+      const nodeElementId = uid("node");
       if (fields.length >= 2) {
-        mappings.set(name, { keyField: fields[0].name, valueField: fields[1].name });
+        mappings.set(name, { keyField: fields[0].name, valueField: fields[1].name, tableNodeId: nodeElementId });
       }
+
       t.steps!.push(body.from
         ? { kind: "LOAD", from: body.from, fields, where: body.where, platform: detectPlatform(body.from), connectionName: currentConnection, sourceQuery: body.sourceQuery }
         : { kind: "RESIDENT", from: body.resident!, fields, where: body.where });
-      ops.push({ kind: "MAPPING", table: name, raw: s.raw.slice(0, 200) });
+
+      executionGraph.push({
+        id: nodeElementId,
+        operation: "LOAD",
+        sequenceOrder: ++sequenceCounter,
+        inputNodes: body.resident ? [getLatestTableNodeId(body.resident)] : ["root_origin"],
+        outputTable: name,
+        meta: { isMappingTable: true, lookupKey: fields[0]?.name, outputValue: fields[1]?.name },
+        rawExpression: s.raw.slice(0, 120)
+      });
+
+      ops.push({ kind: "MAPPING", table: name, raw: s.raw.slice(0, 120) });
       continue;
     }
 
     if (joinPrefix || keepPrefix || concatPrefix) {
       const target = parsePrefixTarget(joinPrefix || keepPrefix || concatPrefix || "") || lastTable;
       if (!target) continue;
-      const t = ensure(target);
-      const fieldNames = fields.map((f) => f.name);
-      const keyFields = t.columns.map((c) => c.name).filter((name) => fieldNames.includes(name));
-      // also add new columns to the target so generator knows them
-      addColumns(t, fields);
-      appendFieldSteps(t, fields);
+      const t = ensureTableState(target);
+      
+      const incomingFields = fields.map((f: FieldExpr) => f.name);
+      const leftKeyColumns = t.columns.map((c: { name: string }) => c.name);
+      const intersectingKeys = leftKeyColumns.filter((name: string) => incomingFields.includes(name));
+
+      const inputTableSourceNode = body.resident ? getLatestTableNodeId(body.resident) : uid("origin_root");
+      const currentTargetStateNode = getLatestTableNodeId(target);
+
+      const existingColumnNames = new Set(t.columns.map((c: { name: string }) => c.name));
+      const addedColumnsThisStep: string[] = [];
+      const overwrittenColumnsThisStep: string[] = [];
+
+      for (const f of fields) {
+        if (isWildcardField(f)) continue;
+        if (!existingColumnNames.has(f.name)) {
+          addedColumnsThisStep.push(f.name);
+          t.columns.push({
+            name: f.name,
+            dataType: inferTypeForField(f),
+            derived: !!f.expr && !/^\[?[A-Za-z_][A-Za-z0-9_ ]*\]?$/.test(f.expr),
+            expression: f.expr,
+          });
+        } else {
+          overwrittenColumnsThisStep.push(f.name);
+        }
+      }
+
+      t.keys = t.columns.map((c: { name: string }) => c.name).filter((n: string) => /(_id|Id|Key|_KEY)$/.test(n) || /^id$/i.test(n));
+
       if (body.resident) t.lineage = [...new Set([...(t.lineage || []), body.resident])];
       if (body.from) {
         t.sourceTables.push(body.from.slice(0, 120));
         t.lineage = [...new Set([...(t.lineage || []), body.from.slice(0, 120)])];
       }
+
       if (concatPrefix) {
         t.steps!.push({
-          kind: "CONCATENATE", withTable: target, withFields: fieldNames,
+          kind: "CONCATENATE", withTable: target, withFields: incomingFields,
           resident: body.resident, fromClause: body.from, connectionName: currentConnection, sourceQuery: body.sourceQuery, platform: body.from ? detectPlatform(body.from) : undefined,
         });
-        ops.push({ kind: "CONCATENATE", table: target, raw: s.raw.slice(0, 200) });
+        
+        executionGraph.push({
+          id: uid("node"),
+          operation: "CONCATENATE",
+          sequenceOrder: ++sequenceCounter,
+          inputNodes: [currentTargetStateNode, inputTableSourceNode],
+          outputTable: target,
+          meta: { baseTable: target, appendedSource: body.resident || body.from, appendedFieldsCount: incomingFields.length },
+          rawExpression: s.raw.slice(0, 120)
+        });
+
+        ops.push({ kind: "CONCATENATE", table: target, raw: s.raw.slice(0, 120) });
       } else if (keepPrefix) {
-        t.steps!.push({
-          kind: "KEEP", joinType: joinTypeFromPrefix(keepPrefix) === "Outer" ? "Inner" : joinTypeFromPrefix(keepPrefix) as "Left" | "Right" | "Inner", withTable: body.resident || target,
+        const jType = joinTypeFromPrefix(keepPrefix) === "Outer" ? "Inner" : joinTypeFromPrefix(keepPrefix) as "Left" | "Right" | "Inner";
+        t.steps!.push({ kind: "KEEP", joinType: jType, withTable: body.resident || target });
+
+        executionGraph.push({
+          id: uid("node"),
+          operation: "KEEP",
+          sequenceOrder: ++sequenceCounter,
+          inputNodes: [currentTargetStateNode, inputTableSourceNode],
+          outputTable: target,
+          meta: { keepType: jType, keysAligned: intersectingKeys },
+          rawExpression: s.raw.slice(0, 120)
         });
-        ops.push({ kind: "KEEP", table: target, detail: joinTypeFromPrefix(keepPrefix), raw: s.raw.slice(0, 200) });
+
+        ops.push({ kind: "KEEP", table: target, detail: joinTypeFromPrefix(keepPrefix), raw: s.raw.slice(0, 120) });
       } else if (joinPrefix) {
+        const jType = joinTypeFromPrefix(joinPrefix);
         t.steps!.push({
-          kind: "JOIN", joinType: joinTypeFromPrefix(joinPrefix), withTable: body.resident || target,
-          withFields: fieldNames, keyFields, resident: body.resident, fromClause: body.from, connectionName: currentConnection, sourceQuery: body.sourceQuery, platform: body.from ? detectPlatform(body.from) : undefined,
+          kind: "JOIN", joinType: jType, withTable: body.resident || target,
+          withFields: incomingFields, keyFields: intersectingKeys, resident: body.resident, fromClause: body.from, connectionName: currentConnection, sourceQuery: body.sourceQuery, platform: body.from ? detectPlatform(body.from) : undefined,
         });
-        ops.push({ kind: "JOIN", table: target, detail: joinTypeFromPrefix(joinPrefix), raw: s.raw.slice(0, 200) });
+
+        executionGraph.push({
+          id: uid("node"),
+          operation: "JOIN",
+          sequenceOrder: ++sequenceCounter,
+          inputNodes: [currentTargetStateNode, inputTableSourceNode],
+          outputTable: target,
+          meta: {
+            joinType: jType,
+            joinSource: body.resident || body.from,
+            joinTarget: target,
+            joinKeys: intersectingKeys,
+            columnsAdded: addedColumnsThisStep,
+            columnsOverwritten: overwrittenColumnsThisStep
+          },
+          rawExpression: s.raw.slice(0, 120)
+        });
+
+        ops.push({ kind: "JOIN", table: target, detail: jType, raw: s.raw.slice(0, 120) });
       }
       lastTable = target;
       continue;
     }
 
-    // Plain LOAD
     if (!s.tableLabel && !body.from && !body.resident) continue;
     const precedingTarget = !s.tableLabel && !!body.from && !!lastTable && !!tables.get(lastTable)
-      && !(tables.get(lastTable)!.steps || []).some((step) => step.kind === "LOAD" || step.kind === "RESIDENT");
+      && !(tables.get(lastTable)!.steps || []).some((step: TableStep) => step.kind === "LOAD" || step.kind === "RESIDENT");
+    
     const name = precedingTarget ? lastTable! : s.tableLabel || (body.from?.match(/([A-Za-z0-9_]+)\.qvd/i)?.[1]) || `Table_${tables.size + 1}`;
-    const t = ensure(name);
-    addColumns(t, fields);
-    appendFieldSteps(t, fields);
+    const t = ensureTableState(name);
+
+    for (const f of fields) {
+      if (isWildcardField(f)) continue;
+      const inlineApplyMapMatch = f.expr?.match(/ApplyMap\s*\(\s*['"]?([^,'"]+)['"]?\s*,\s*([^,\)]+)(?:,\s*([^\)]+))?\)/i);
+      
+      if (inlineApplyMapMatch) {
+        const mapRef = inlineApplyMapMatch[1].trim();
+        const srcCol = inlineApplyMapMatch[2].replace(/[\[\]]/g, "").trim();
+        const defVal = inlineApplyMapMatch[3]?.trim();
+        const mapMeta = mappings.get(mapRef);
+
+        t.steps!.push({
+          kind: "APPLYMAP", mapName: mapRef, sourceField: srcCol, asField: f.name, defaultValue: defVal,
+        });
+
+        executionGraph.push({
+          id: uid("node"),
+          operation: "APPLYMAP",
+          sequenceOrder: ++sequenceCounter,
+          inputNodes: [getLatestTableNodeId(name), mapMeta?.tableNodeId || "root_origin"],
+          outputTable: name,
+          meta: { mappingTableName: mapRef, lookupKeyField: srcCol, resultColumn: f.name, defaultValue: defVal },
+          rawExpression: f.expr || ""
+        });
+      }
+
+      if (!t.columns.find((c: { name: string }) => c.name === f.name)) {
+        t.columns.push({
+          name: f.name,
+          dataType: inferTypeForField(f),
+          derived: !!f.expr && !/^\[?[A-Za-z_][A-Za-z0-9_ ]*\]?$/.test(f.expr),
+          expression: f.expr,
+        });
+      }
+    }
+    
+    t.keys = t.columns.map((c: { name: string }) => c.name).filter((n: string) => /(_id|Id|Key|_KEY)$/.test(n) || /^id$/i.test(n));
+
     if (body.from) {
       const platform = detectPlatform(body.from);
       t.sourcePlatform = platform;
       t.sourceConnection = body.from.slice(0, 300);
       t.sourceTables.push(body.from.slice(0, 80));
       t.lineage = [...new Set([...(t.lineage || []), body.from.slice(0, 120)])];
-      // Insert LOAD step at front
       t.steps!.unshift({ kind: "LOAD", from: body.from, fields, where: body.where, platform, connectionName: currentConnection, sourceQuery: body.sourceQuery });
+
+      executionGraph.push({
+        id: uid("node"),
+        operation: "LOAD",
+        sequenceOrder: ++sequenceCounter,
+        inputNodes: ["root_origin"],
+        outputTable: name,
+        meta: { sourcePath: body.from, platform, hasWhereClause: !!body.where },
+        rawExpression: s.raw.slice(0, 120)
+      });
+
       ops.push({ kind: "LOAD", table: name, raw: s.raw.slice(0, 200) });
     } else if (body.resident) {
-      t.sourceTables.push(body.resident);
-      t.lineage = [...new Set([...(t.lineage || []), body.resident])];
-      t.steps!.unshift({ kind: "RESIDENT", from: body.resident, fields, where: body.where });
-      ops.push({ kind: "RESIDENT", table: name, detail: body.resident, raw: s.raw.slice(0, 200) });
+      const residentSource = body.resident;
+      t.sourceTables.push(residentSource);
+      t.lineage = [...new Set([...(t.lineage || []), residentSource])];
+      t.steps!.unshift({ kind: "RESIDENT", from: residentSource, fields, where: body.where });
+
+      executionGraph.push({
+        id: uid("node"),
+        operation: "RESIDENT",
+        sequenceOrder: ++sequenceCounter,
+        inputNodes: [getLatestTableNodeId(residentSource)],
+        outputTable: name,
+        meta: { residentSourceTable: residentSource, hasWhereClause: !!body.where },
+        rawExpression: s.raw.slice(0, 120)
+      });
+
+      ops.push({ kind: "RESIDENT", table: name, detail: residentSource, raw: s.raw.slice(0, 200) });
     }
     lastTable = name;
   }
 
-  // Apply DROP + RENAME table
   for (const name of [...tables.keys()]) {
     if (dropped.has(name)) tables.get(name)!.isFinal = false;
   }
@@ -503,69 +659,80 @@ export function parseEtlQvs(text: string, sourceTables: SourceTable[] = []): Etl
   }
 
   const allTables = [...tables.values()];
-  const finalTables = allTables.filter((t) => t.isFinal && t.type !== "Mapping");
+  const finalTables = allTables.filter((t: FinalTable) => t.isFinal && t.type !== "Mapping");
 
-  // Classify Fact/Dimension based on structure
   for (const t of finalTables) {
-    t.type = classifyTable(t, finalTables);
+    const n = t.name;
+    if (/calendar|date_dim|^date$|^time$/i.test(n)) {
+      t.type = "Calendar";
+    } else if (executionGraph.some((node: ExecutionNode) => node.operation === "JOIN" && node.meta.joinTarget === t.name)) {
+      t.type = "Fact";
+    } else {
+      t.type = "Dimension";
+    }
   }
 
-  // Detect relationships via shared key column names
   const relationships: Relationship[] = [];
-  const keyMap = new Map<string, { table: string; col: string }[]>();
-  for (const t of finalTables) {
-    for (const c of t.columns) {
-      if (/(_id|Id|Key|_KEY)$/.test(c.name) || /^id$/i.test(c.name)) {
-        if (!keyMap.has(c.name)) keyMap.set(c.name, []);
-        keyMap.get(c.name)!.push({ table: t.name, col: c.name });
+  const trackedRelationshipSignatures = new Set<string>();
+
+  const registerRelationshipNode = (fromT: string, fromC: string, toT: string, toC: string) => {
+    const sig = `${fromT}.${fromC}->${toT}.${toC}`;
+    if (!trackedRelationshipSignatures.has(sig) && tables.has(fromT) && tables.has(toT)) {
+      trackedRelationshipSignatures.add(sig);
+
+      const targetRightTableObj = tables.get(toT);
+      let calculatedCardinality: Relationship["cardinality"] = "N:1";
+
+      if (targetRightTableObj) {
+        const isRightTableCalendarOrDim = targetRightTableObj.type === "Calendar" || targetRightTableObj.type === "Dimension";
+        const isLeftTableFact = tables.get(fromT)?.type === "Fact";
+
+        if (isRightTableCalendarOrDim && isLeftTableFact) {
+          calculatedCardinality = "N:1";
+        } else if (fromC.toLowerCase() === "id" && toC.toLowerCase() === "id") {
+          calculatedCardinality = "1:1";
+        }
+      }
+
+      relationships.push({
+        id: uid("rel"),
+        fromTable: fromT,
+        fromColumn: fromC,
+        toTable: toT,
+        toColumn: toC,
+        cardinality: calculatedCardinality
+      });
+    }
+  };
+
+  for (const node of executionGraph) {
+    if (node.operation === "JOIN" && node.meta.joinKeys) {
+      const srcTable = node.meta.joinSource;
+      const targetTable = node.meta.joinTarget;
+      if (srcTable && targetTable) {
+        for (const key of node.meta.joinKeys) {
+          registerRelationshipNode(targetTable, key, srcTable, key);
+        }
+      }
+    }
+    if (node.operation === "APPLYMAP") {
+      const mappingTableName = node.meta.mappingTableName;
+      const lookupKeyField = node.meta.lookupKeyField;
+      const sourceField = node.meta.sourceField;
+      if (mappingTableName && lookupKeyField && sourceField) {
+        registerRelationshipNode(node.outputTable, lookupKeyField, mappingTableName, sourceField);
       }
     }
   }
-  for (const [, refs] of keyMap) {
-    if (refs.length < 2) continue;
-    const dim = refs.find((r) => tables.get(r.table)?.type === "Dimension") || refs[0];
-    for (const r of refs) {
-      if (r === dim) continue;
-      relationships.push({
-        id: uid("rel"),
-        fromTable: r.table, fromColumn: r.col,
-        toTable: dim.table, toColumn: dim.col,
-        cardinality: "N:1",
-      });
-    }
-  }
 
-  // Include mapping tables in metadata via etlOperations only (not as final)
   return {
     etlOperations: ops,
     allTables,
     finalTables,
     relationships,
     droppedTables: [...dropped],
-    intermediateTables: allTables.filter((t) => !t.isFinal && t.type !== "Mapping").map((t) => t.name),
+    intermediateTables: allTables.filter((t: FinalTable) => !t.isFinal && t.type !== "Mapping").map((t: FinalTable) => t.name),
     variables,
+    executionGraph
   };
-}
-
-function classifyTable(t: FinalTable, all: FinalTable[]): FinalTable["type"] {
-  const n = t.name;
-  if (/calendar|date_dim|^date$|^time$/i.test(n)) return "Calendar";
-  if (/^(dim|d_)/i.test(n) || /_dim$/i.test(n)) return "Dimension";
-  if (/^(fact|f_)/i.test(n) || /_fact$/i.test(n)) return "Fact";
-
-  // Structural: a Fact has multiple FK-like columns referencing other tables,
-  // many numeric measures, and is "wide" with joins/concatenates.
-  const cols = t.columns;
-  const idCols = cols.filter((c) => /(_id|Id|Key|_KEY)$/.test(c.name) || /^id$/i.test(c.name));
-  const numericCols = cols.filter((c) => /Decimal|Integer|Number/.test(c.dataType));
-  const otherIdRefs = idCols.filter((c) =>
-    all.some((o) => o.name !== t.name && o.columns.some((oc) => oc.name === c.name)),
-  );
-  const hasJoinSteps = (t.steps || []).some((s) => s.kind === "JOIN" || s.kind === "CONCATENATE" || s.kind === "KEEP");
-  const score =
-    otherIdRefs.length * 2 + (numericCols.length >= 3 ? 2 : 0) + (hasJoinSteps ? 1 : 0) +
-    (/sales|orders|transactions|revenue|invoice|shipment|payment|ledger/i.test(n) ? 3 : 0);
-
-  if (score >= 3) return "Fact";
-  return "Dimension";
 }

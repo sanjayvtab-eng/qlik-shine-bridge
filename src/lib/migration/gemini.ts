@@ -1,6 +1,8 @@
-import type { Requirement, BusinessMetadata, TechnicalMetadata } from "./types";
+import type { Requirement, BusinessMetadata, TechnicalMetadata, FinalTable, SourceTable } from "./types";
 
-const ACTIVE_MODEL = "gemini-2.5-flash"; 
+// Programmatic model constants for fallback orchestration
+const PRIMARY_MODEL = "gemini-2.5-pro";
+const FALLBACK_MODEL = "gemini-2.5-flash";
 
 const getApiKey = (): string => {
   if (typeof window !== "undefined") {
@@ -16,26 +18,20 @@ const getApiKey = (): string => {
   return "YOUR_GEMINI_API_KEY";
 };
 
-/**
- * Advanced script token minimizer.
- * Strips out structural overhead characters and comments to minimize the token footprint
- * by up to 90% while keeping vital logical statements intact.
- */
 function compressQvsScriptForAi(text: string): string {
   if (!text) return "";
   return text
-    .replace(/\/\*[\s\S]*?\*\//g, "") // Remove multi-line block comments
-    .replace(/\/\/.*$/gm, "")         // Remove inline row comments
-    .replace(/^\s*REM\s.*$/gim, "")   // Remove legacy Qlik REM comment strings
-    .replace(/\s+/g, " ")             // Collapse consecutive layout spacing elements
-    .replace(/;\s*/g, ";\n")          // Isolate distinct statements cleanly onto individual rows
-    .trim();
+    .replace(/\/\*[\s\S]*?\*\//g, "") 
+    .replace(/\/\/.*$/gm, "")         
+    .replace(/^\s*REM\s.*$/gim, "")   
+    .replace(/[ \t]+/g, " ")          
+    .replace(/;\s*/g, ";\n")          
+    .split("\n")
+    .map((line: string) => line.trim())
+    .filter((line: string) => line.length > 0)
+    .join("\n");
 }
 
-/**
- * Defensive utility to repair unescaped newlines and structural code text anomalies
- * inside raw LLM text fields before executing the native JSON parser.
- */
 function sanitizeJsonString(rawJson: string): string {
   let clean = rawJson.trim();
   if (clean.startsWith("```")) {
@@ -49,7 +45,6 @@ function sanitizeJsonString(rawJson: string): string {
   
   for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
-    
     if (inString) {
       if (char === '\\' && !isEscaped) {
         isEscaped = true;
@@ -61,70 +56,40 @@ function sanitizeJsonString(rawJson: string): string {
         result += char;
         isEscaped = false;
       } else {
-        if (char === '\n') {
-          result += '\\n';
-        } else if (char === '\r') {
-          result += '\\r';
-        } else if (char === '\t') {
-          result += '\\t';
-        } else {
-          result += char;
-        }
+        if (char === '\n') result += '\\n';
+        else if (char === '\r') result += '\\r';
+        else if (char === '\t') result += '\\t';
+        else result += char;
       }
     } else {
-      if (char === '"') {
-        inString = true;
-      } else if (char === '{') {
-        stack.push('{');
-      } else if (char === '}') {
-        if (stack.length > 0 && stack[stack.length - 1] === '{') {
-          stack.pop();
-        }
-      } else if (char === '[') {
-        stack.push('[');
-      } else if (char === ']') {
-        if (stack.length > 0 && stack[stack.length - 1] === '[') {
-          stack.pop();
-        }
-      }
+      if (char === '"') inString = true;
+      else if (char === '{') stack.push('{');
+      else if (char === '}') { if (stack.length > 0 && stack[stack.length - 1] === '{') stack.pop(); }
+      else if (char === '[') stack.push('[');
+      else if (char === ']') { if (stack.length > 0 && stack[stack.length - 1] === '[') stack.pop(); }
       result += char;
     }
   }
-  
-  if (inString) {
-    result += '"';
-  }
-  
-  // Clean up trailing commas before closing
+  if (inString) result += '"';
   result = result.replace(/,\s*$/, '');
-  
-  // If it ends with a colon, add null to make it valid JSON
-  if (result.match(/:\s*$/)) {
-    result += 'null';
-  }
-  
-  // Close unclosed structures
+  if (result.match(/:\s*$/)) result += 'null';
   while (stack.length > 0) {
     const top = stack.pop();
-    if (top === '{') {
-      result += '}';
-    } else if (top === '[') {
-      result += ']';
-    }
+    if (top === '{') result += '}';
+    else if (top === '[') result += ']';
   }
-  
   return result;
 }
 
 /**
- * Intelligent fetch wrapper that handles 429 Rate Limits and 503 Service Unavailable using progressive backoff
+ * Intelligent fetch wrapper that handles 429 Rate Limits using exponential backoff.
  */
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 12000): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 8000): Promise<Response> {
   let currentDelay = initialDelay;
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);
     if (response.status === 429 || response.status === 503) {
-      console.warn(`[Gemini API] Temporary error (${response.status}). Waiting ${currentDelay / 1000}s before executing retry ${i + 1}/${retries}...`);
+      console.warn(`[Gemini API] Quota limit encountered (${response.status}). Cooling down for ${currentDelay / 1000}s (Attempt ${i + 1}/${retries})...`);
       await new Promise((resolve) => setTimeout(resolve, currentDelay));
       currentDelay *= 2; 
       continue;
@@ -134,41 +99,12 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, in
   return fetch(url, options);
 }
 
-/**
- * STAGE 2: Compiles user business requirements into a structured technical Markdown Rule Book.
- */
 export async function generateRuleBookViaAi(requirement: Requirement): Promise<string> {
-  // Use static template instead of AI generation
   const template = `# Qlik to Power BI Migration Rule Book
-
-## Report Name
-{{ReportName}}
-
-## Business Objective
-{{BusinessObjective}}
-
-## Business Requirement
-{{BusinessRequirement}}
-
-## Source Tables
-{{SourceTableNames}}
-
-## Source Columns
-{{SourceColumnNames}}
-
-## Expected Output
-{{ExpectedOutput}}
-
+## Report Name\n{{ReportName}}\n## Business Objective\n{{BusinessObjective}}\n## Business Requirement\n{{BusinessRequirement}}\n## Source Tables\n{{SourceTableNames}}\n## Source Columns\n{{SourceColumnNames}}\n## Expected Output\n{{ExpectedOutput}}
 ## Migration Rules
-
-- Analyze the uploaded Source QVS.
-- Analyze the uploaded ETL QVS.
-- Preserve the complete ETL logic.
-- Detect the final surviving tables.
-- Generate Power Query only for the final tables.
-- Convert Qlik Set Analysis to Power BI DAX.
-- Generate the Power BI semantic model.
-- Create a Calendar table only if one does not exist.`;
+- Analyze the uploaded Source QVS and ETL QVS scripts.
+- Preserve the complete ETL logic and map individual stages directly to equivalent target Power Query transformations.`;
 
   return template
     .replace("{{ReportName}}", requirement.reportName || "—")
@@ -180,15 +116,146 @@ export async function generateRuleBookViaAi(requirement: Requirement): Promise<s
 }
 
 /**
- * STAGE 3: Performs full semantic code parsing of QVS scripts against the Rule Book 
- * to build complete and validated Technical and Business Metadata graphs.
+ * STAGE 3 MAIN ENTRANCE POINT
+ * Orchestrates dual-pass logic analysis with automatic runtime fallback resilience.
  */
 export async function analyzeQvsScriptsViaAi(
   requirement: Requirement,
   ruleBookMd: string,
   sourceQvsText: string,
   etlQvsText: string
-): Promise<{ businessMetadata: BusinessMetadata; technicalMetadata: TechnicalMetadata }> {
+): Promise<{ businessMetadata: BusinessMetadata; technicalMetadata: TechnicalMetadata; executionMetrics: any }> {
+  
+  let stage3A: any;
+  let stage3B: any;
+  let finalModelUsed = PRIMARY_MODEL;
+
+  try {
+    console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
+    stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL);
+    
+    // Throttle delay to protect token allocation bucket space
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    
+    console.log(`[Engine] Initializing semantic validation pass via ${PRIMARY_MODEL}...`);
+    stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
+  } catch (error: any) {
+    console.warn(`[Engine Fallback] ${PRIMARY_MODEL} encountered limit limits or truncation issues. Activating high-capacity fallback engine (${FALLBACK_MODEL})... Log:`, error.message || error);
+    
+    finalModelUsed = FALLBACK_MODEL;
+    stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
+  }
+
+  const unifiedTechnical: TechnicalMetadata = {
+    statementMetrics: stage3A.statementMetrics || { totalLoadStatements: 0, totalJoinStatements: 0, totalResidentLoads: 0, totalApplyMapCalls: 0 },
+    executionOrder: stage3B.executionOrder || [],
+    lineageGraph: stage3A.lineageGraph || [],
+    droppedTables: stage3A.droppedTables || [],
+    joins: stage3A.joins || [],
+    residentLoads: stage3A.residentLoads || [],
+    applyMaps: stage3A.applyMaps || [],
+    concatenateOperations: stage3A.concatenateOperations || [],
+    renameOperations: stage3B.renameOperations || [],
+    filters: stage3B.filters || [],
+    sourceTables: stage3A.sourceTables || [],
+    allTables: stage3A.allTables || [],
+    finalTables: stage3A.finalTables || [],
+    relationships: stage3B.relationships || [],
+    variables: stage3B.variables || {},
+    executionGraph: stage3A.executionGraph || []
+  };
+
+  const executionMetrics = {
+    analysisConfidence: finalModelUsed === PRIMARY_MODEL ? 1.0 : 0.85, 
+    metadataCompleteness: 1.0,
+    warnings: [] as string[],
+    missingTablesCount: 0,
+    missingColumnsCount: 0,
+    activeEngineTier: finalModelUsed
+  };
+
+  const allTablesSet = new Set<string>((unifiedTechnical.allTables || []).map((t: FinalTable) => t.name));
+  const finalTablesMap = new Map<string, Set<string>>(
+    (unifiedTechnical.finalTables || []).map((t: FinalTable) => [t.name, new Set<string>((t.columns || []).map((c: { name: string }) => c.name))])
+  );
+  const sourceTablesMap = new Map<string, Set<string>>(
+    (unifiedTechnical.sourceTables || []).map((t: SourceTable) => [t.name, new Set<string>((t.columns || []).map((c: { name: string }) => c.name))])
+  );
+
+  const lookupColumnInModel = (tableName: string, columnName: string): boolean => {
+    return finalTablesMap.get(tableName)?.has(columnName) || sourceTablesMap.get(tableName)?.has(columnName) || false;
+  };
+
+  const metrics = unifiedTechnical.statementMetrics;
+  if (metrics.totalJoinStatements > 0 && unifiedTechnical.joins.length === 0) {
+    executionMetrics.warnings.push(`Script declares ${metrics.totalJoinStatements} JOIN modifiers, but 0 parsed into schema.`);
+  }
+  if (metrics.totalResidentLoads > 0 && unifiedTechnical.residentLoads.length === 0) {
+    executionMetrics.warnings.push(`Script declares ${metrics.totalResidentLoads} RESIDENT scopes, but 0 parsed into schema.`);
+  }
+
+  for (const table of unifiedTechnical.finalTables) {
+    if (!table.columns || table.columns.length === 0) {
+      executionMetrics.missingColumnsCount++;
+      executionMetrics.warnings.push(`Target table '${table.name}' does not contain column configurations.`);
+    }
+    if (!allTablesSet.has(table.name)) {
+      executionMetrics.missingTablesCount++;
+      executionMetrics.warnings.push(`Final model table '${table.name}' is missing from the master allTables array.`);
+    }
+    for (const srcName of table.sourceTables) {
+      if (!allTablesSet.has(srcName) && !sourceTablesMap.has(srcName)) {
+        executionMetrics.missingTablesCount++;
+        executionMetrics.warnings.push(`Final step table '${table.name}' references an unrecognized upstream ancestor dependency: '${srcName}'.`);
+      }
+    }
+  }
+
+  for (const rel of unifiedTechnical.relationships) {
+    const fromTableExists = finalTablesMap.has(rel.fromTable) || sourceTablesMap.has(rel.fromTable);
+    const toTableExists = finalTablesMap.has(rel.toTable) || sourceTablesMap.has(rel.toTable);
+
+    if (!fromTableExists) {
+      executionMetrics.missingTablesCount++;
+      executionMetrics.warnings.push(`Relationship tracking connector '${rel.id}' references a missing 'from' table: '${rel.fromTable}'`);
+    } else if (!lookupColumnInModel(rel.fromTable, rel.fromColumn)) {
+      executionMetrics.missingColumnsCount++;
+      executionMetrics.warnings.push(`Relationship tracking connector '${rel.id}' references a missing field entry: '${rel.fromTable}'.'${rel.fromColumn}'`);
+    }
+
+    if (!toTableExists) {
+      executionMetrics.missingTablesCount++;
+      executionMetrics.warnings.push(`Relationship tracking connector '${rel.id}' references a missing 'to' table: '${rel.toTable}'`);
+    } else if (!lookupColumnInModel(rel.toTable, rel.toColumn)) {
+      executionMetrics.missingColumnsCount++;
+      executionMetrics.warnings.push(`Relationship tracking connector '${rel.id}' references a missing field entry: '${rel.toTable}'.'${rel.toColumn}'`);
+    }
+  }
+
+  if (executionMetrics.warnings.length > 0) {
+    executionMetrics.analysisConfidence = Math.max(0.4, executionMetrics.analysisConfidence - (executionMetrics.warnings.length * 0.05));
+    executionMetrics.metadataCompleteness = Math.max(0.4, 1.0 - ((executionMetrics.missingTablesCount * 0.1) + (executionMetrics.missingColumnsCount * 0.04)));
+  }
+
+  return { 
+    businessMetadata: stage3B.businessMetadata, 
+    technicalMetadata: unifiedTechnical,
+    executionMetrics
+  };
+}
+
+/**
+ * STAGE 3A: Focuses strictly on Extracting Schema Shapes, Lineage, and Data Flow Mechanics
+ */
+async function analyzeStage3A(
+  requirement: Requirement,
+  ruleBookMd: string,
+  sourceQvsText: string,
+  etlQvsText: string,
+  targetModel: string
+): Promise<any> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key configuration error.");
 
@@ -196,25 +263,249 @@ export async function analyzeQvsScriptsViaAi(
   const streamlinedEtl = compressQvsScriptForAi(etlQvsText);
 
   const prompt = `
-    You are a precise data lineage compiler and metadata engine. Analyze the provided compacted Qlik QVS scripts against the Migration Rule Book and Requirements.
-    Extract and populate every data model parameter completely. Do not truncate records or inject generic comment placeholders.
+    You are an expert Qlik Data Architecture Engine. Analyze the provided scripts to isolate table shapes, execution footprints, and structural lineage blocks according to the Migration Rule Book rules.
+    
+    ### MIGRATION RULE BOOK GUIDELINES:
+    ${ruleBookMd}
 
-    ### CRITICAL TOKEN ECONOMY & TRUNCATION RULES:
-    To prevent response truncation, do NOT duplicate long raw Qlik script blocks inside the "raw" fields or "expression" fields. 
-    Keep "raw" and "expression" property values strictly minimized to the essential statement clause or formula logic (maximum 120 characters per string block).
-
-    ### CRITICAL STRING INJECTION JSON RULE:
-    Every text property value MUST be cleanly escaped to follow native JSON boundaries. 
-    Multi-line expressions must have formatting line-breaks systematically escaped as "\\n" instead of copying literal unescaped newlines.
+    ### CORE OBJECTIVES:
+    1. Count and return precise total telemetry metrics for LOAD, JOIN, RESIDENT, and APPLYMAP operations.
+    2. Document source schema structures and target surviving final dataset definitions.
+    3. Trace explicit table lineages, joins, appends, and specialized resident source states.
 
     ### Input Context:
-    - Target Requirements Profile: ${JSON.stringify(requirement)}
-    - Migration Rule Book Rules: ${ruleBookMd}
-    - Compressed Ingested Source QVS Script: ${streamlinedSource}
-    - Compressed Ingested ETL QVS Script: ${streamlinedEtl}
+    - Requirements Context: ${JSON.stringify(requirement)}
+    - Script Data 1 (Source): ${streamlinedSource}
+    - Script Data 2 (ETL): ${streamlinedEtl}
   `;
 
-  const structuralResponseSchema = {
+  const schema3A = {
+    type: "OBJECT",
+    properties: {
+      statementMetrics: {
+        type: "OBJECT",
+        properties: {
+          totalLoadStatements: { type: "INTEGER" },
+          totalJoinStatements: { type: "INTEGER" },
+          totalResidentLoads: { type: "INTEGER" },
+          totalApplyMapCalls: { type: "INTEGER" }
+        },
+        required: ["totalLoadStatements", "totalJoinStatements", "totalResidentLoads", "totalApplyMapCalls"]
+      },
+      lineageGraph: { type: "ARRAY", items: { type: "STRING" } },
+      droppedTables: { type: "ARRAY", items: { type: "STRING" } },
+      joins: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            type: { type: "STRING", enum: ["Left", "Right", "Inner", "Outer"] },
+            leftTable: { type: "STRING" },
+            rightTable: { type: "STRING" },
+            joinKeys: { type: "ARRAY", items: { type: "STRING" } }
+          },
+          required: ["type", "leftTable", "rightTable", "joinKeys"]
+        }
+      },
+      residentLoads: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            targetTable: { type: "STRING" },
+            sourceResidentTable: { type: "STRING" }
+          },
+          required: ["targetTable", "sourceResidentTable"]
+        }
+      },
+      applyMaps: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            mapName: { type: "STRING" },
+            targetTable: { type: "STRING" },
+            targetField: { type: "STRING" },
+            lookupKeyField: { type: "STRING" }
+          },
+          required: ["mapName", "targetTable", "targetField", "lookupKeyField"]
+        }
+      },
+      concatenateOperations: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            baseTable: { type: "STRING" },
+            appendedTable: { type: "STRING" },
+            isImplicit: { type: "BOOLEAN" }
+          },
+          required: ["baseTable", "appendedTable", "isImplicit"]
+        }
+      },
+      sourceTables: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" },
+            name: { type: "STRING" },
+            platform: { type: "STRING" },
+            columns: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: { name: { type: "STRING" }, dataType: { type: "STRING" } },
+                required: ["name", "dataType"]
+              }
+            }
+          },
+          required: ["id", "name", "platform", "columns"]
+        }
+      },
+      allTables: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: { name: { type: "STRING" }, type: { type: "STRING" } },
+          required: ["name", "type"]
+        }
+      },
+      finalTables: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" },
+            name: { type: "STRING" },
+            type: { type: "STRING", enum: ["Fact", "Dimension", "Calendar", "Bridge", "Mapping"] },
+            sourceTables: { type: "ARRAY", items: { type: "STRING" } },
+            isFinal: { type: "BOOLEAN" },
+            lineage: { type: "ARRAY", items: { type: "STRING" } },
+            columns: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  name: { type: "STRING" },
+                  dataType: { type: "STRING" },
+                  derived: { type: "BOOLEAN" },
+                  expression: { type: "STRING" }
+                },
+                required: ["name", "dataType"]
+              }
+            }
+          },
+          required: ["id", "name", "type", "columns", "sourceTables", "isFinal"]
+        }
+      },
+      executionGraph: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" },
+            operation: { type: "STRING", enum: ["LOAD", "RESIDENT", "JOIN", "KEEP", "CONCATENATE", "APPLYMAP", "DROP", "RENAME_TABLE", "RENAME_FIELD", "DERIVED", "DROP_FIELD"] },
+            sequenceOrder: { type: "INTEGER" },
+            inputNodes: { type: "ARRAY", items: { type: "STRING" } },
+            outputTable: { type: "STRING" },
+            meta: { type: "OBJECT" },
+            rawExpression: { type: "STRING" }
+          },
+          required: ["id", "operation", "sequenceOrder", "inputNodes", "outputTable", "meta", "rawExpression"]
+        }
+      }
+    },
+    required: ["statementMetrics", "lineageGraph", "joins", "residentLoads", "applyMaps", "concatenateOperations", "sourceTables", "allTables", "finalTables", "executionGraph"]
+  };
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+  const response = await fetchWithRetry(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.0,
+        maxOutputTokens: 8192, 
+        responseMimeType: "application/json",
+        responseSchema: schema3A
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Stage 3A Parsing Failure (${response.status}): ${errText}`);
+  }
+  const result = await response.json();
+  return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
+}
+
+/**
+ * STAGE 3B: Processes Functional Logic, Filters, Operational Sequences, Modifiers, and System Variables
+ */
+async function analyzeStage3B(
+  requirement: Requirement,
+  ruleBookMd: string,
+  sourceQvsText: string,
+  etlQvsText: string,
+  structuralBlueprint: any,
+  targetModel: string
+): Promise<any> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Gemini API key configuration error.");
+
+  const streamlinedSource = compressQvsScriptForAi(sourceQvsText);
+  const streamlinedEtl = compressQvsScriptForAi(etlQvsText);
+
+  // ✅ Fixed: Added complete, hyper-restrictive literal Extraction Rules block
+  const prompt = `
+    You are an elite Qlik Functional Logic Compiler. Your focus is mapping sequence logs, filters, renames, relationship definitions, and environment variables based on the Migration Rule Book rules.
+    
+    ### MIGRATION RULE BOOK GUIDELINES:
+    ${ruleBookMd}
+
+    ### BUSINESS METADATA EXTRACTION RULES
+    Populate businessMetadata ONLY from the Requirement Input and Migration Rule Book.
+    Do NOT infer, rename, normalize, or invent any source or final table names.
+    expectedTables MUST contain ONLY the source tables listed in "Source Table Names" from the Rule Book.
+    expectedFinalTables MUST contain ONLY the final output tables listed in "Expected Output" from the Rule Book.
+    Never create names such as FactSales, FactSales_Map, SalesFact, Customer_Map, or any intermediate table unless they explicitly exist in the Rule Book.
+
+    If the Rule Book specifies:
+    Source Tables:
+    Sales2025_Stg
+    Sales2026_Stg
+    Customers_Stg
+    Customer_Attributes_Stg
+    Products_Stg
+    Regions_Stg
+    Then expectedTables must contain exactly those names.
+
+    If the Rule Book specifies:
+    FactSales_Final
+    Products
+    Regions
+    Calendar
+    Then expectedFinalTables must contain exactly those names.
+
+    ### CRITICAL ARCHITECTURAL BOUNDARY BOUNDING CLAUSE:
+    You MUST treat the provided 'Structural Architecture Context' layout blueprint as IMMUTABLE. 
+    - Do NOT invent, drop, modify, or redefine table structures or table names. 
+    - Enrich ONLY the existing blueprint schemas by detailing variables, data relationships, where filters, and sequence logs.
+
+    ### Provided Structural Architecture Context Blueprint:
+    ${JSON.stringify(structuralBlueprint)}
+
+    ### Input Context:
+    - Original Source Requirements Profile: ${JSON.stringify(requirement)}
+    - Script Ingests (Compressed):
+    ${streamlinedSource}
+    ${streamlinedEtl}
+  `;
+
+  const schema3B = {
     type: "OBJECT",
     properties: {
       businessMetadata: {
@@ -227,144 +518,56 @@ export async function analyzeQvsScriptsViaAi(
           businessRules: { type: "ARRAY", items: { type: "STRING" } },
           expectedTables: { type: "ARRAY", items: { type: "STRING" } },
           expectedFinalTables: { type: "ARRAY", items: { type: "STRING" } },
-          expectedColumns: { type: "ARRAY", items: { type: "STRING" } },
-          expectedRelationships: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: { type: "STRING" },
-                fromTable: { type: "STRING" },
-                fromColumn: { type: "STRING" },
-                toTable: { type: "STRING" },
-                toColumn: { type: "STRING" },
-                cardinality: { type: "STRING", enum: ["1:1", "1:N", "N:1", "N:N"] }
-              },
-              required: ["id", "fromTable", "fromColumn", "toTable", "toColumn", "cardinality"]
-            }
-          }
+          expectedColumns: { type: "ARRAY", items: { type: "STRING" } }
         },
-        required: ["reportName", "businessObjective", "businessRequirement", "expectedOutput", "businessRules", "expectedTables", "expectedFinalTables", "expectedColumns", "expectedRelationships"]
+        required: ["reportName", "businessObjective", "businessRequirement", "expectedOutput", "businessRules"]
       },
-      technicalMetadata: {
-        type: "OBJECT",
-        properties: {
-          sourceTables: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: { type: "STRING" },
-                name: { type: "STRING" },
-                platform: { type: "STRING" },
-                database: { type: "STRING" },
-                schema: { type: "STRING" },
-                connectionPath: { type: "STRING" },
-                connectionName: { type: "STRING" },
-                sourceQuery: { type: "STRING" },
-                columns: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      name: { type: "STRING" },
-                      dataType: { type: "STRING" }
-                    },
-                    required: ["name", "dataType"]
-                  }
-                }
-              },
-              required: ["id", "name", "platform", "columns"]
-            }
+      executionOrder: { type: "ARRAY", items: { type: "STRING" } },
+      renameOperations: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            tableName: { type: "STRING" },
+            originalFieldName: { type: "STRING" },
+            newFieldName: { type: "STRING" }
           },
-          allTables: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                name: { type: "STRING" },
-                type: { type: "STRING" }
-              },
-              required: ["name", "type"]
-            }
+          required: ["tableName", "originalFieldName", "newFieldName"]
+        }
+      },
+      filters: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            tableName: { type: "STRING" },
+            clauseExpression: { type: "STRING" },
+            type: { type: "STRING", enum: ["WHERE", "HAVING", "INNER_JOIN_FILTER"] }
           },
-          finalTables: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: { type: "STRING" },
-                name: { type: "STRING" },
-                type: { type: "STRING", enum: ["Fact", "Dimension", "Calendar", "Bridge", "Mapping"] },
-                sourceTables: { type: "ARRAY", items: { type: "STRING" } },
-                isFinal: { type: "BOOLEAN" },
-                keys: { type: "ARRAY", items: { type: "STRING" } },
-                lineage: { type: "ARRAY", items: { type: "STRING" } },
-                columns: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      name: { type: "STRING" },
-                      dataType: { type: "STRING" },
-                      derived: { type: "BOOLEAN" },
-                      expression: { type: "STRING" }
-                    },
-                    required: ["name", "dataType"]
-                  }
-                },
-                steps: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      kind: { type: "STRING", enum: ["LOAD", "RESIDENT", "JOIN", "KEEP", "CONCATENATE", "APPLYMAP", "DERIVED", "RENAME_FIELD", "DROP_FIELD", "PEEK", "PREVIOUS", "AUTONUMBER", "CROSSTABLE", "HIERARCHY", "INTERVALMATCH"] },
-                      from: { type: "STRING" },
-                      withTable: { type: "STRING" },
-                      mapName: { type: "STRING" },
-                      sourceField: { type: "STRING" },
-                      asField: { type: "STRING" },
-                      expression: { type: "STRING" },
-                      name: { type: "STRING" },
-                      where: { type: "STRING" },
-                      isDistinct: { type: "BOOLEAN" },
-                      groupBy: { type: "ARRAY", items: { type: "STRING" } },
-                      orderBy: { type: "ARRAY", items: { type: "STRING" } },
-                      fields: { type: "ARRAY", items: { type: "OBJECT" } },
-                      withFields: { type: "ARRAY", items: { type: "STRING" } },
-                      keyFields: { type: "ARRAY", items: { type: "STRING" } }
-                    },
-                    required: ["kind"]
-                  }
-                }
-              },
-              required: ["id", "name", "type", "columns", "sourceTables", "isFinal", "steps"]
-            }
+          required: ["tableName", "clauseExpression", "type"]
+        }
+      },
+      relationships: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" },
+            fromTable: { type: "STRING" },
+            fromColumn: { type: "STRING" },
+            toTable: { type: "STRING" },
+            toColumn: { type: "STRING" },
+            cardinality: { type: "STRING", enum: ["1:1", "1:N", "N:1", "N:N"] }
           },
-          relationships: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: { type: "STRING" },
-                fromTable: { type: "STRING" },
-                fromColumn: { type: "STRING" },
-                toTable: { type: "STRING" },
-                toColumn: { type: "STRING" },
-                cardinality: { type: "STRING", enum: ["1:1", "1:N", "N:1", "N:N"] }
-              },
-              required: ["id", "fromTable", "fromColumn", "toTable", "toColumn", "cardinality"]
-            }
-          },
-          variables: { type: "OBJECT" }
-        },
-        required: ["sourceTables", "allTables", "finalTables", "relationships", "variables"]
-      }
+          required: ["id", "fromTable", "fromColumn", "toTable", "toColumn", "cardinality"]
+        }
+      },
+      variables: { type: "OBJECT" }
     },
-    required: ["businessMetadata", "technicalMetadata"]
+    required: ["businessMetadata", "executionOrder", "renameOperations", "filters", "relationships", "variables"]
   };
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ACTIVE_MODEL}:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
   const response = await fetchWithRetry(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -372,64 +575,21 @@ export async function analyzeQvsScriptsViaAi(
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.0,
-        maxOutputTokens: 8192, // Maximum runway token generation budget
+        maxOutputTokens: 8192, 
         responseMimeType: "application/json",
-        responseSchema: structuralResponseSchema
+        responseSchema: schema3B
       }
     })
   });
 
   if (!response.ok) {
-    const errorDetails = await response.text();
-    throw new Error(`Gemini API Error (Stage 3 Metadata Analysis): ${response.status} - ${errorDetails}`);
+    const errText = await response.text();
+    throw new Error("Stage 3B Parsing Failure: " + errText);
   }
-
-  const resultBody = await response.json();
-  const metadataJsonText = resultBody?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!metadataJsonText) {
-    throw new Error("Received an empty content payload from Gemini API during script structural parsing.");
-  }
-
-  const parsedCleanText = sanitizeJsonString(metadataJsonText);
-  const parsed = JSON.parse(parsedCleanText);
-
-  // Safeguard against truncated or hallucinated schema properties to prevent undefined '.length' errors
-  const business = parsed.businessMetadata || {};
-  business.expectedTables = business.expectedTables || [];
-  business.expectedFinalTables = business.expectedFinalTables || [];
-  business.expectedColumns = business.expectedColumns || [];
-  business.expectedRelationships = business.expectedRelationships || [];
-  business.businessRules = business.businessRules || [];
-
-  const technical = parsed.technicalMetadata || {};
-  technical.sourceSystems = technical.sourceSystems || [];
-  technical.sourceTables = technical.sourceTables || [];
-  technical.sourceColumns = technical.sourceColumns || [];
-  technical.allTables = technical.allTables || [];
-  technical.finalTables = technical.finalTables || [];
-  technical.finalColumns = technical.finalColumns || [];
-  technical.relationships = technical.relationships || [];
-  technical.keys = technical.keys || [];
-  technical.transformations = technical.transformations || [];
-  technical.variables = technical.variables || {};
-  technical.droppedTables = technical.droppedTables || [];
-  technical.intermediateTables = technical.intermediateTables || [];
-  technical.dependencyGraph = technical.dependencyGraph || [];
-
-  // Ensure table level columns and steps are safeguarded
-  for (const t of technical.sourceTables) t.columns = t.columns || [];
-  for (const t of technical.finalTables) {
-    t.columns = t.columns || [];
-    t.steps = t.steps || [];
-    t.sourceTables = t.sourceTables || [];
-  }
-
-  return { businessMetadata: business, technicalMetadata: technical };
+  const result = await response.json();
+  return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
 }
 
-/**
- * STAGE 5: Compiles and translates expressions into clean Power BI DAX Measures.
- */
 export async function generateDaxMeasuresWithGemini(
   requirement: Requirement,
   ruleBookMd: string,
@@ -440,47 +600,29 @@ export async function generateDaxMeasuresWithGemini(
 
   const prompt = `
     You are an elite Power BI Business Intelligence Engineer specializing in performance-optimized DAX formulas.
-    Generate a complete file containing clean, enterprise-ready DAX measures based on the following migration context and structural metadata rules.
-
-    ### Migration Context:
+    Generate clean, enterprise-ready DAX measures based on the following context maps:
     - Business Directives: ${JSON.stringify(requirement)}
     - Compiled Migration Rule Book: ${ruleBookMd}
-    - Analyzed Models Schema Layout: ${JSON.stringify(technicalMetadata)}
-
-    ### Execution Rules:
-    1. Convert all QlikView/Qlik Sense expressions and calculations into standard, robust Power BI DAX formatting.
-    2. Explicitly handle complex conversions (e.g., translating implicit Qlik Set Analysis scopes into native CALCULATE modifiers and filtering functions).
-    3. Return output as clear, beautifully formatted DAX code blocks matching this structure:
-       Measure Name = CALCULATE(SUM(...), FILTER(...))
+    - Layout Schema Blueprint: ${JSON.stringify(technicalMetadata)}
   `;
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ACTIVE_MODEL}:generateContent?key=${apiKey}`;
+  const daxEngineModel = technicalMetadata.executionGraph && technicalMetadata.executionGraph.length > 25 ? FALLBACK_MODEL : PRIMARY_MODEL;
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${daxEngineModel}:generateContent?key=${apiKey}`;
   const response = await fetchWithRetry(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
     })
   });
 
-  if (!response.ok) {
-    const errorDetails = await response.text();
-    throw new Error(`Gemini API Error (Stage 5 DAX Engine): ${response.status} - ${errorDetails}`);
-  }
-
+  if (!response.ok) throw new Error(`Gemini API Error (Stage 5 DAX Engine): ${response.status}`);
   const resultBody = await response.json();
-  const daxOutputCode = resultBody?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!daxOutputCode) {
-    throw new Error("Gemini API returned an empty code block during DAX conversion operations.");
-  }
-
-  return daxOutputCode;
+  return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 }
 
-/**
- * STAGE 6: Generates complete structural JSON mappings for semantic models.
- */
 export async function generateSemanticModelWithGemini(
   businessMetadata: BusinessMetadata,
   technicalMetadata: TechnicalMetadata
@@ -490,13 +632,13 @@ export async function generateSemanticModelWithGemini(
 
   const prompt = `Generate a complete semantic dataset relationship model configuration in JSON based on the provided technical schemas: ${JSON.stringify(technicalMetadata)}`;
   
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${ACTIVE_MODEL}:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${FALLBACK_MODEL}:generateContent?key=${apiKey}`;
   const response = await fetchWithRetry(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.0, responseMimeType: "application/json", maxOutputTokens: 4096 }
+      generationConfig: { temperature: 0.0, responseMimeType: "application/json", maxOutputTokens: 8192 }
     })
   });
 
