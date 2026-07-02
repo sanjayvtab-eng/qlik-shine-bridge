@@ -610,6 +610,65 @@ async function analyzeStage3B(
   return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
 }
 
+export async function generatePowerQueryViaAi(
+  businessMetadata: BusinessMetadata,
+  technicalMetadata: TechnicalMetadata,
+  ruleBookMd: string
+): Promise<{ table: string; code: string }[]> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Gemini API key is missing.");
+
+  const prompt = `
+    You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler. 
+    Your ONLY source of truth is the Migration Rule Book. You must generate production-ready Power Query M code for the final surviving tables based on the execution graph.
+    
+    ### MIGRATION RULE BOOK GUIDELINES:
+    ${ruleBookMd}
+
+    ### CORE OBJECTIVES:
+    1. Iterate over every final table defined in the Technical Metadata.
+    2. Read the execution graph lineage nodes for that table to understand the transformations applied (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
+    3. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
+    4. You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
+    5. Ensure the generated M code is syntactically valid and production-ready.
+
+    ### Input Context:
+    - Business Requirements: ${JSON.stringify(businessMetadata)}
+    - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
+
+    ### OUTPUT FORMAT:
+    Return a strictly valid JSON array of objects. Do not include markdown codeblocks (\`\`\`).
+    [
+      { "table": "TableName", "code": "let\\n    Source = ...\\nin\\n    Source" }
+    ]
+  `;
+
+  let pqEngineModel = getActiveModel(PRIMARY_MODEL);
+
+  try {
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
+    const response = await fetchWithRetry(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API Error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    return JSON.parse(sanitizeJsonString(resultText));
+  } catch (error) {
+    console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
+    throw error;
+  }
+}
+
 export async function generateDaxMeasuresWithGemini(
   requirement: Requirement,
   ruleBookMd: string,

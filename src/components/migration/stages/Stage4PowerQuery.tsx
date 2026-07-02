@@ -5,8 +5,10 @@ import { AlertCircle, ArrowRight, Check, Copy, Download, GitBranch, Loader2, Fil
 import { cn } from "@/lib/utils";
 import type { FinalTable } from "@/lib/migration/types";
 
+import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
+
 export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
-  const { businessMetadata, technicalMetadata, finalTables = [], validationReport, setStageStatus } = useMigration();
+  const { businessMetadata, technicalMetadata, finalTables = [], ruleBookMd, validationReport, setStageStatus } = useMigration();
 
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -32,10 +34,28 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
     if (validationReport?.blockingErrors) return;
     setGenerating(true);
     setGenerationError(null);
-    await new Promise((r) => setTimeout(r, 400));
     try {
-      const result = generatePowerQueriesFromMigrationMetadata(businessMetadata, technicalMetadata);
-      const compiledQueries = result.queries;
+      if (!ruleBookMd) throw new Error("Rule Book is missing. Cannot generate rule-driven Power Query.");
+      
+      let compiledQueries: { table: FinalTable; code: string }[] = [];
+      try {
+        console.info("[Stage4] Initiating rule-driven AI Power Query generation...");
+        const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd);
+        
+        // Map AI output strings back to FinalTable objects
+        compiledQueries = aiOutput.map(aiQuery => {
+          const matchedTable = finalTables.find(t => t.name === aiQuery.table) || {
+            id: `ai_${aiQuery.table}`, name: aiQuery.table, type: "Fact",
+            columns: [], sourceTables: [], isFinal: true, steps: [], keys: [], lineage: []
+          };
+          return { table: matchedTable, code: aiQuery.code };
+        });
+      } catch (aiErr) {
+        console.info("[Stage4] AI generation failed or rate limited. Falling back to local offline Power Query compiler.");
+        const fallbackResult = generatePowerQueriesFromMigrationMetadata(businessMetadata, technicalMetadata);
+        compiledQueries = fallbackResult.queries;
+      }
+
       setQueries(compiledQueries);
       setGenerated(true);
       
