@@ -23,7 +23,7 @@ export function Stage1Requirement({ onNext }: { onNext: () => void }) {
   );
 
   const required: (keyof Requirement)[] = ["reportName", "businessObjective", "businessRequirement", "sourceTableNames", "sourceColumnNames", "expectedOutput"];
-  const filled = required.filter((k) => form[k].trim()).length;
+  const filled = required.filter((k) => form[k]?.trim()).length;
   const accuracy = Math.round((filled / required.length) * 100);
   const canSubmit = filled === required.length;
 

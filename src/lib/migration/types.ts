@@ -212,3 +212,32 @@ export interface TechnicalMetadata {
   etlOperations?: EtlOperation[];
   sourcePlatform?: SourcePlatform;
 }
+
+export interface SetAnalysisRow {
+  name: string;
+  expression: string;
+  description?: string;
+}
+
+export interface MigrationMetadata {
+  requirement?: Requirement;
+  ruleBookMd?: string;
+  sourceFileName?: string;
+  etlFileName?: string;
+  setAnalysisFileName?: string;
+  variableLogicFileName?: string;
+  sourceTables: SourceTable[];
+  etlOperations: EtlOperation[];
+  allTables?: FinalTable[];
+  finalTables: FinalTable[];
+  relationships: Relationship[];
+  variables: Record<string, string>;
+  droppedTables: string[];
+  intermediateTables: string[];
+  setAnalysisRows: SetAnalysisRow[];
+  businessMetadata?: BusinessMetadata;
+  technicalMetadata?: TechnicalMetadata;
+  validationReport?: MigrationValidationReport;
+  stageStatus: Record<number, "pending" | "in-progress" | "complete" | "failed">;
+  stageAccuracy: Record<number, number | null>;
+}

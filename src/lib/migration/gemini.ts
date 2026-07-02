@@ -4,6 +4,16 @@ import type { Requirement, BusinessMetadata, TechnicalMetadata, FinalTable, Sour
 const PRIMARY_MODEL = "gemini-2.5-pro";
 const FALLBACK_MODEL = "gemini-2.5-flash";
 
+let isProExhausted = false;
+
+function getActiveModel(preferredModel: string): string {
+  if (preferredModel === PRIMARY_MODEL && isProExhausted) {
+    console.info(`[Engine] ${PRIMARY_MODEL} is marked as exhausted. Directing request to ${FALLBACK_MODEL} directly.`);
+    return FALLBACK_MODEL;
+  }
+  return preferredModel;
+}
+
 const getApiKey = (): string => {
   if (typeof window !== "undefined") {
     if ((window as any).ENV_GEMINI_API_KEY) return (window as any).ENV_GEMINI_API_KEY;
@@ -89,14 +99,8 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, in
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);
     if (response.status === 429 || response.status === 503) {
-      if (response.status === 429) {
-        console.warn(`[Gemini API] Quota limit 429 encountered. Failing fast to trigger fallback...`);
-        return response;
-      }
-      console.warn(`[Gemini API] Quota limit encountered (${response.status}). Cooling down for ${currentDelay / 1000}s (Attempt ${i + 1}/${retries})...`);
-      await new Promise((resolve) => setTimeout(resolve, currentDelay));
-      currentDelay *= 2; 
-      continue;
+      console.warn(`[Gemini API] Limit or outage ${response.status} encountered. Failing fast to trigger fallback...`);
+      return response;
     }
     return response;
   }
@@ -132,24 +136,36 @@ export async function analyzeQvsScriptsViaAi(
   
   let stage3A: any;
   let stage3B: any;
-  let finalModelUsed = PRIMARY_MODEL;
+  let finalModelUsed = getActiveModel(PRIMARY_MODEL);
 
   try {
-    console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
-    stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL);
-    
-    // Throttle delay to protect token allocation bucket space
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    
-    console.log(`[Engine] Initializing semantic validation pass via ${PRIMARY_MODEL}...`);
-    stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
+    if (finalModelUsed === PRIMARY_MODEL) {
+      console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL);
+      
+      // Throttle delay to protect token allocation bucket space
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      
+      console.log(`[Engine] Initializing semantic validation pass via ${PRIMARY_MODEL}...`);
+      stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
+    } else {
+      console.log(`[Engine] Skipping ${PRIMARY_MODEL} due to session-level rate limit. Using ${FALLBACK_MODEL} directly.`);
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
+    }
   } catch (error: any) {
-    console.warn(`[Engine Fallback] ${PRIMARY_MODEL} encountered limit limits or truncation issues. Activating high-capacity fallback engine (${FALLBACK_MODEL})... Log:`, error.message || error);
-    
-    finalModelUsed = FALLBACK_MODEL;
-    stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
+    if (finalModelUsed === PRIMARY_MODEL) {
+      console.warn(`[Engine Fallback] ${PRIMARY_MODEL} encountered rate limits or errors. Marking as exhausted for this session and activating fallback engine (${FALLBACK_MODEL})... Log:`, error.message || error);
+      isProExhausted = true;
+      finalModelUsed = FALLBACK_MODEL;
+      
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
+    } else {
+      throw error;
+    }
   }
 
   const unifiedTechnical: TechnicalMetadata = {
@@ -610,7 +626,8 @@ export async function generateDaxMeasuresWithGemini(
     - Layout Schema Blueprint: ${JSON.stringify(technicalMetadata)}
   `;
 
-  const daxEngineModel = technicalMetadata.executionGraph && technicalMetadata.executionGraph.length > 25 ? FALLBACK_MODEL : PRIMARY_MODEL;
+  let daxEngineModel = technicalMetadata.executionGraph && technicalMetadata.executionGraph.length > 25 ? FALLBACK_MODEL : PRIMARY_MODEL;
+  daxEngineModel = getActiveModel(daxEngineModel);
 
   try {
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${daxEngineModel}:generateContent?key=${apiKey}`;
@@ -629,6 +646,7 @@ export async function generateDaxMeasuresWithGemini(
   } catch (error) {
     if (daxEngineModel === PRIMARY_MODEL) {
       console.warn(`[DAX Fallback] ${PRIMARY_MODEL} encountered error. Activating fallback engine (${FALLBACK_MODEL})...`);
+      isProExhausted = true;
       try {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${FALLBACK_MODEL}:generateContent?key=${apiKey}`;
         const response = await fetchWithRetry(apiUrl, {

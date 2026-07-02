@@ -34,7 +34,8 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
     setGenerationError(null);
     await new Promise((r) => setTimeout(r, 400));
     try {
-      const compiledQueries = generatePowerQueriesFromMigrationMetadata(businessMetadata, technicalMetadata);
+      const result = generatePowerQueriesFromMigrationMetadata(businessMetadata, technicalMetadata);
+      const compiledQueries = result.queries;
       setQueries(compiledQueries);
       setGenerated(true);
       

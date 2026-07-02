@@ -34,7 +34,7 @@ function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/^\s*REM\s.*$/gim);
+    .replace(/^\s*REM\s.*$/gim, "");
 }
 
 interface FieldExpr { name: string; expr?: string; alias?: boolean; }

@@ -37,12 +37,13 @@ export function Stage6Model({ onNext }: { onNext?: () => void }) {
         name: "Calendar",
         type: "Calendar",
         columns: [
-          { name: "Date", dataType: "Date" }, { name: "Year", dataType: "Integer" },
-          { name: "Quarter", dataType: "Integer" }, { name: "Month", dataType: "Integer" },
-          { name: "MonthName", dataType: "String" }, { name: "Day", dataType: "Integer" },
+          { name: "Date", dataType: "Date", derived: true }, { name: "Year", dataType: "Integer", derived: true },
+          { name: "Quarter", dataType: "Integer", derived: true }, { name: "Month", dataType: "Integer", derived: true },
+          { name: "MonthName", dataType: "String", derived: true }, { name: "Day", dataType: "Integer", derived: true },
         ],
         sourceTables: [], isFinal: true,
-      },
+        steps: [], keys: [], lineage: []
+      } as FinalTable,
     ];
   }, [finalTables]);
 

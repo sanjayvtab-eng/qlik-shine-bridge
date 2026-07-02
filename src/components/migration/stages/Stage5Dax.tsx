@@ -81,7 +81,8 @@ export function Stage5Dax({ onNext }: { onNext?: () => void }) {
     setError(null);
     setStageStatus(5, "in-progress");
     await new Promise((r) => setTimeout(r, 600));
-    const rows = parseSetAnalysisFile(setRaw.text);
+    const rowsMap = parseSetAnalysisFile(setRaw.text);
+    const rows = Object.entries(rowsMap).map(([name, expression]) => ({ name, expression }));
     setSetAnalysis({ rows, fileName: setRaw.name });
     if (varRaw) {
       const vars = parseVariableLogicFile(varRaw.text);

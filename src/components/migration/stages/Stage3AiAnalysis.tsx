@@ -64,6 +64,15 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         technicalMetadata.relationships = etlRes.relationships;
       }
 
+      if (!technicalMetadata.executionGraph?.length && etlRes.executionGraph?.length) {
+        console.warn("[Stage3] AI returned no execution graph — falling back to local ETL parser results.");
+        technicalMetadata.executionGraph = etlRes.executionGraph;
+      }
+      
+      if (!technicalMetadata.allTables?.length && etlRes.allTables?.length) {
+        technicalMetadata.allTables = etlRes.allTables;
+      }
+
       // 4. Validate the merged metadata
       const finalValidationReport = validateMigrationMetadata(
         aiResponse.businessMetadata,
