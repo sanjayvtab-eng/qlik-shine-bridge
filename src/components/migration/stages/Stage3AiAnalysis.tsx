@@ -46,6 +46,9 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         console.info("[Stage3] AI engine unavailable (quota exceeded). Proceeding with offline local parsing...");
         aiResponse = {
           businessMetadata: {
+            reportName: requirement.reportName || "Offline Fallback",
+            businessRequirement: requirement.businessRequirement || "Offline Fallback",
+            expectedOutput: requirement.expectedOutput || "Offline Fallback",
             sourceTables: requirement.sourceTableNames ? requirement.sourceTableNames.split(',').map(s => s.trim()) : [],
             finalTables: [], businessRules: []
           },
