@@ -89,6 +89,10 @@ async function fetchWithRetry(url: string, options: RequestInit, retries = 3, in
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);
     if (response.status === 429 || response.status === 503) {
+      if (response.status === 429) {
+        console.warn(`[Gemini API] Quota limit 429 encountered. Failing fast to trigger fallback...`);
+        return response;
+      }
       console.warn(`[Gemini API] Quota limit encountered (${response.status}). Cooling down for ${currentDelay / 1000}s (Attempt ${i + 1}/${retries})...`);
       await new Promise((resolve) => setTimeout(resolve, currentDelay));
       currentDelay *= 2; 
@@ -608,19 +612,42 @@ export async function generateDaxMeasuresWithGemini(
 
   const daxEngineModel = technicalMetadata.executionGraph && technicalMetadata.executionGraph.length > 25 ? FALLBACK_MODEL : PRIMARY_MODEL;
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${daxEngineModel}:generateContent?key=${apiKey}`;
-  const response = await fetchWithRetry(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
-    })
-  });
+  try {
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${daxEngineModel}:generateContent?key=${apiKey}`;
+    const response = await fetchWithRetry(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+      })
+    });
 
-  if (!response.ok) throw new Error(`Gemini API Error (Stage 5 DAX Engine): ${response.status}`);
-  const resultBody = await response.json();
-  return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!response.ok) throw new Error(`Gemini API Error (Stage 5 DAX Engine): ${response.status}`);
+    const resultBody = await response.json();
+    return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  } catch (error) {
+    if (daxEngineModel === PRIMARY_MODEL) {
+      console.warn(`[DAX Fallback] ${PRIMARY_MODEL} encountered error. Activating fallback engine (${FALLBACK_MODEL})...`);
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${FALLBACK_MODEL}:generateContent?key=${apiKey}`;
+        const response = await fetchWithRetry(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 8192 }
+          })
+        });
+        if (!response.ok) throw new Error(`Gemini API Error (Stage 5 DAX Fallback Engine): ${response.status}`);
+        const resultBody = await response.json();
+        return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      } catch (fallbackError) {
+        throw fallbackError;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function generateSemanticModelWithGemini(
