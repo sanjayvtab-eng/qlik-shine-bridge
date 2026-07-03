@@ -649,20 +649,26 @@ export async function generatePowerQueryViaAi(
     **[1] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...) with hardcoded rows, SimulatedQVDData, SimulatedSales2025, or any fake in-memory tables.
     - Every query must reference an actual connector expression, not sample rows.
-    - If the actual target source is unknown, emit a single-line connector stub with a clear TODO comment, never fabricate rows.
+    - If the actual target source is unknown, emit a connector stub with a clear TODO comment, never fabricate rows.
 
-    **[2] CORRECT SOURCE CONNECTORS (NO Csv.Document for QVDs, NO File.Contents-only stubs)**
-    - Detect the source platform from the QVS LIB CONNECT TO or file extension in the raw script.
-    - Map to the correct Power Query connector:
-      - SQL Server  → Sql.Database("server", "db")
-      - Oracle      → Oracle.Database("server")
-      - Databricks  → Databricks.Catalogs("host", "/sql/1.0/warehouses/id")
-      - Snowflake   → Snowflake.Databases("account.snowflakecomputing.com")
-      - Excel (.xlsx/.xls) → Excel.Workbook(File.Contents("path"), null, true)
-      - CSV (.csv)  → Csv.Document(File.Contents("path"), [Delimiter=",", Encoding=65001])
-      - QVD (.qvd)  → /* TODO: Replace with target data source connector (was QVD: "filename.qvd") */
-                      followed by Sql.Database("TODO_Server","TODO_Database") as the stub
-    - File.Contents() alone returns raw binary. NEVER use it as a final source without a parser wrapper.
+    **[2] CORRECT SOURCE CONNECTORS WITH FULL NAVIGATION TABLE**
+    - Step 1: Detect the source platform by reading the QVS LIB CONNECT TO string or file extension.
+    - Step 2: Emit the correct base connector:
+      - SQL Server  → Sql.Database("TODO_Server", "TODO_Database")
+      - Oracle      → Oracle.Database("TODO_Server")
+      - Databricks  → Databricks.Catalogs("TODO_Host", "/sql/1.0/warehouses/TODO_Id")
+      - Snowflake   → Snowflake.Databases("TODO_Account.snowflakecomputing.com")
+      - Excel       → Excel.Workbook(File.Contents("TODO_Path"), null, true)
+      - CSV         → Csv.Document(File.Contents("TODO_Path"), [Delimiter=",", Encoding=65001])
+      - QVD (unknown target) → Sql.Database("TODO_Server", "TODO_Database") /* TODO: was QVD: "filename.qvd" */
+    - Step 3 (CRITICAL for database connectors): Sql.Database(), Oracle.Database(), Databricks, and Snowflake all return navigation tables, NOT flat data tables. You MUST navigate to the actual table using:
+      \`\`\`
+      Source        = Sql.Database("server", "db"),
+      dbo_TableName = Source{[Schema="dbo", Item="TableName"]}[Data]
+      \`\`\`
+      For Excel: navigate via \`{[Item="SheetName", Kind="Sheet"]}[Data]\`.
+    - File.Contents() alone returns raw binary. NEVER use it as a final source without a proper parser wrapper.
+    - ALWAYS replace TODO placeholders with inline comments instructing the developer what to fill in.
 
     **[3] INDEPENDENT INTERMEDIATE QUERIES (Power BI best practice)**
     - Each logical staging table in the Qlik script (e.g., Sales2025_Stg, RegionMap, Customers_Stg) MUST be generated as its own separate, independent Power Query query object in the output array.
@@ -677,9 +683,10 @@ export async function generatePowerQueryViaAi(
       d) Row count comparison: a simple record with before/after row counts.
     - These validation queries should NOT block loading; they are informational diagnostic queries.
 
-    **[5] NO INFERRED BUSINESS LOGIC**
-    - DO NOT generate ProfitUSD, SalesBand, or ANY calculated column unless it literally exists in the raw QVS script.
-    - If you generate unmapped business logic not present in the source, the migration fails.
+    **[5] ABSOLUTE ZERO INFERRED BUSINESS LOGIC**
+    - Scan the raw QVS scripts line by line. If a calculated expression like ProfitUSD, SalesBand, or any derived metric is NOT literally present in the QVS script text, DO NOT generate it.
+    - This is the highest-priority rule. Generating ProfitUSD or SalesBand when they are absent from the source QVS = migration failure.
+    - If you are unsure whether a column exists in the QVS, DO NOT generate it. Omission is safer than invention.
 
     **[6] COLUMN PRESERVATION**
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
@@ -702,7 +709,7 @@ export async function generatePowerQueryViaAi(
     ### OUTPUT FORMAT:
     Return a strictly valid JSON array. Each object = one Power Query query. Include staging queries, final queries, AND validation queries as separate entries. Do not include markdown codeblocks (\`\`\`).
     [
-      { "table": "Sales2025_Stg", "code": "let\\n    // Staging query\\n    Source = ...\\nin\\n    Source" },
+      { "table": "Sales2025_Stg", "code": "let\\n    // Staging query\\n    Source = Sql.Database(\\"TODO_Server\\", \\"TODO_Database\\"),\\n    dbo_Sales = Source{[Schema=\\"dbo\\",Item=\\"Sales\\"]}[Data]\\nin\\n    dbo_Sales" },
       { "table": "FactSales_Final", "code": "let\\n    // References Sales2025_Stg\\n    Source = Sales2025_Stg,\\n    ...\\nin\\n    Source" },
       { "table": "FactSales_Final_Validation", "code": "let\\n    // Diagnostic: duplicate + null key checks\\n    ...\\nin\\n    Source" }
     ]
