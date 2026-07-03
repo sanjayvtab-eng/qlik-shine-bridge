@@ -8,7 +8,7 @@ import type { FinalTable } from "@/lib/migration/types";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
 
 export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
-  const { businessMetadata, technicalMetadata, finalTables = [], ruleBookMd, validationReport, setStageStatus } = useMigration();
+  const { businessMetadata, technicalMetadata, finalTables = [], ruleBookMd, validationReport, sourceQvsText, etlQvsText, setStageStatus } = useMigration();
 
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -40,7 +40,7 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
       let compiledQueries: { table: FinalTable; code: string }[] = [];
       try {
         console.info("[Stage4] Initiating rule-driven AI Power Query generation...");
-        const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd);
+        const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText);
         
         // Map AI output strings back to FinalTable objects
         compiledQueries = aiOutput.map(aiQuery => {

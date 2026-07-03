@@ -99,8 +99,8 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       );
 
       // 5. Update store
-      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: sourceRaw.name });
-      setEtlAnalysis({ ...etlRes, etlFileName: etlRaw.name });
+      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: sourceRaw.name, text: sourceRaw.text });
+      setEtlAnalysis({ ...etlRes, etlFileName: etlRaw.name, text: etlRaw.text });
       
       setMergedMetadata({
         businessMetadata: aiResponse.businessMetadata,

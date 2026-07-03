@@ -5,6 +5,8 @@ import type {
 } from "./types";
 
 interface MigrationStore extends MigrationMetadata {
+  sourceQvsText?: string;
+  etlQvsText?: string;
   reset: () => void;
   setRequirement: (r: Requirement) => void;
   setRuleBook: (md: string) => void;
@@ -13,7 +15,7 @@ interface MigrationStore extends MigrationMetadata {
     relationships: Relationship[];
     sourceTables?: SourceTable[];
   }) => void;
-  setSourceAnalysis: (data: { sourceTables: SourceTable[]; sourceFileName: string }) => void;
+  setSourceAnalysis: (data: { sourceTables: SourceTable[]; sourceFileName: string; text?: string }) => void;
   updateSourceTable: (id: string, patch: Partial<SourceTable>) => void;
   setEtlAnalysis: (data: {
     etlOperations: EtlOperation[];
@@ -24,6 +26,7 @@ interface MigrationStore extends MigrationMetadata {
     intermediateTables: string[];
     variables: Record<string, string>;
     etlFileName: string;
+    text?: string;
   }) => void;
   setMergedMetadata: (data: {
     businessMetadata: BusinessMetadata;
@@ -38,7 +41,7 @@ interface MigrationStore extends MigrationMetadata {
   setVariables: (vars: Record<string, string>) => void;
 }
 
-const initial: MigrationMetadata = {
+const initial: MigrationMetadata & { sourceQvsText?: string; etlQvsText?: string } = {
   sourceTables: [],
   etlOperations: [],
   allTables: [],
@@ -51,6 +54,8 @@ const initial: MigrationMetadata = {
   businessMetadata: undefined,
   technicalMetadata: undefined,
   validationReport: undefined,
+  sourceQvsText: undefined,
+  etlQvsText: undefined,
   stageStatus: { 1: "pending", 2: "pending", 3: "pending", 4: "pending", 5: "pending", 6: "pending" },
   stageAccuracy: { 1: null, 2: null, 3: null, 4: null, 5: null, 6: null },
 };

@@ -616,7 +616,9 @@ import qlikToPbiEquivalentReference from './docs/Qlik_to_PowerBI_Equivalent_Refe
 export async function generatePowerQueryViaAi(
   businessMetadata: BusinessMetadata,
   technicalMetadata: TechnicalMetadata,
-  ruleBookMd: string
+  ruleBookMd: string,
+  sourceQvsText?: string,
+  etlQvsText?: string
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -636,14 +638,23 @@ export async function generatePowerQueryViaAi(
 
     ### CORE OBJECTIVES:
     1. Iterate over every final table defined in the Technical Metadata.
-    2. Read the execution graph lineage nodes for that table to understand the transformations applied (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
-    3. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
-    4. You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
-    5. Ensure the generated M code is syntactically valid and production-ready.
+    2. Read the execution graph lineage nodes for that table to understand the high-level transformations applied (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
+    3. Analyze the RAW SOURCE QVS scripts provided below to precisely understand the granular ETL logic, where clauses, text formatting, and inline calculations.
+    4. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
+    5. You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
+    6. Ensure the generated M code is syntactically valid and production-ready.
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
     - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
+    - Raw Source QVS Script:
+    \`\`\`qlik
+    ${sourceQvsText || "No source script provided."}
+    \`\`\`
+    - Raw ETL QVS Script:
+    \`\`\`qlik
+    ${etlQvsText || "No ETL script provided."}
+    \`\`\`
 
     ### OUTPUT FORMAT:
     Return a strictly valid JSON array of objects. Do not include markdown codeblocks (\`\`\`).
