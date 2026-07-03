@@ -643,12 +643,15 @@ export async function generatePowerQueryViaAi(
     4. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
     
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (MANDATORY):
-    - **ABSOLUTELY NO INVENTED BUSINESS LOGIC**: DO NOT invent calculated columns, derived metrics (e.g., ProfitUSD = Revenue - Cost), or bucketing (e.g., SalesBand) unless they EXPLICITLY exist in the raw QVS scripts or the Rule Book. If it is not in the source code, do not write it in the M-code. You will be penalized for hallucinating standard business logic that isn't present in the source.
-    - **No Arbitrary Column Dropping**: When performing the final column selection or Table.SelectColumns, you MUST preserve ALL columns that were loaded in the raw QVS script. Do not drop important columns (IDs, Dates, Metrics) unless the QVS script explicitly uses a DROP FIELD statement or omits them in a subsequent resident load.
-    - **Intelligent Source Connectors**: Do not blindly default to Csv.Document. Analyze the Qlik connection strings (e.g., \`LIB CONNECT TO 'SQL Server'\`) or file extensions in the QVS script. Generate the corresponding Power Query connector (e.g., \`Sql.Database\`, \`Oracle.Database\`, \`Databricks.Catalogs\`, \`Snowflake.Databases\`, \`Excel.Workbook\`, \`Csv.Document\`). For QVDs, use a standard connector placeholder with an inline comment \`// TODO: Replace with actual target data source (was QVD)\`. Do NOT use fake functions like \`Qvd.Contents\`.
-    - **Production Robustness & Error Handling**: Your generated M code must be production-ready. Include error handling where appropriate, such as using \`MissingField.Ignore\` during joins/expands, handling nulls during data type conversions, and ensuring robust column selection.
-    - **Enterprise Traceability (Lineage)**: Include detailed inline M-comments before major transformation steps to show the origin and lineage of the transformation. For example: \`// Lineage: FactSales -> ApplyMap(RegionMap) -> LEFT JOIN Customers\`. This improves debugging traceability.
-    - **No Hallucinations**: You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
+    - **CRITICAL: NO INFERRED BUSINESS LOGIC**: You are strictly forbidden from inventing calculations. DO NOT generate \`ProfitUSD = RevenueUSD - CostUSD\`, \`SalesBand\`, or ANY other calculated column unless they literally exist character-for-character in the raw QVS scripts or Rule Book. If you generate unmapped business logic, the migration fails.
+    - **Intelligent Source Connectors (NO Csv.Document for QVDs)**: A .qvd file is NOT a CSV. If the source is a QVD, DO NOT wrap it in \`Csv.Document\`. Instead, emit the correct connector based on the target platform (e.g., \`Sql.Database\`, \`Databricks.Catalogs\`). If the target is unknown, simply use \`File.Contents("path.qvd") /* TODO: Replace with target data source */\` without any document parser wrapper.
+    - **Data Validation & Error Handling**: Your generated M code MUST include production-grade ETL validations:
+      1. Filter out null key fields before joins (e.g., \`Table.SelectRows(..., each [Key] <> null)\`).
+      2. Handle missing lookup values during \`Table.NestedJoin\` and expand operations.
+      3. Mitigate duplicate keys where appropriate (e.g., \`Table.Distinct\`).
+      4. Explicitly define data types using \`Table.TransformColumnTypes\` to prevent datatype mismatches.
+    - **No Arbitrary Column Dropping**: When performing the final column selection, you MUST preserve ALL columns that were loaded in the raw QVS script.
+    - **Enterprise Traceability (Lineage)**: Include detailed inline M-comments before major transformation steps to show the origin and lineage of the transformation (e.g., \`// Lineage: FactSales -> ApplyMap(RegionMap) -> LEFT JOIN Customers\`).
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
