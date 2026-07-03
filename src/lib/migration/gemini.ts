@@ -626,9 +626,9 @@ export async function generatePowerQueryViaAi(
   if (!apiKey) throw new Error("Gemini API key is missing.");
 
   const prompt = `
-    You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler. 
-    Your ONLY source of truth is the Migration Rule Book and the supplementary knowledge files provided below. You must generate production-ready Power Query M code for the final surviving tables based on the execution graph.
-    
+    You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler.
+    Your ONLY source of truth is the Migration Rule Book and the knowledge files provided below. Generate production-ready Power Query M code strictly from the raw QVS scripts.
+
     ### MIGRATION RULE BOOK GUIDELINES (Specific to this migration):
     ${ruleBookMd}
 
@@ -640,20 +640,52 @@ export async function generatePowerQueryViaAi(
 
     ### CORE OBJECTIVES:
     1. Iterate over every final table defined in the Technical Metadata.
-    2. Read the execution graph lineage nodes for that table to understand the high-level transformations applied (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
-    3. Analyze the RAW SOURCE QVS scripts provided below to precisely understand the granular ETL logic, where clauses, text formatting, and inline calculations.
-    4. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
-    
-    ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (MANDATORY):
-    - **CRITICAL: NO INFERRED BUSINESS LOGIC**: You are strictly forbidden from inventing calculations. DO NOT generate \`ProfitUSD = RevenueUSD - CostUSD\`, \`SalesBand\`, or ANY other calculated column unless they literally exist character-for-character in the raw QVS scripts or Rule Book. If you generate unmapped business logic, the migration fails.
-    - **Intelligent Source Connectors (NO Csv.Document for QVDs)**: A .qvd file is NOT a CSV. If the source is a QVD, DO NOT wrap it in \`Csv.Document\`. Instead, emit the correct connector based on the target platform (e.g., \`Sql.Database\`, \`Databricks.Catalogs\`). If the target is unknown, simply use \`File.Contents("path.qvd") /* TODO: Replace with target data source */\` without any document parser wrapper.
-    - **Data Validation & Error Handling**: Your generated M code MUST include production-grade ETL validations:
-      1. Filter out null key fields before joins (e.g., \`Table.SelectRows(..., each [Key] <> null)\`).
-      2. Handle missing lookup values during \`Table.NestedJoin\` and expand operations.
-      3. Mitigate duplicate keys where appropriate (e.g., \`Table.Distinct\`).
-      4. Explicitly define data types using \`Table.TransformColumnTypes\` to prevent datatype mismatches.
-    - **No Arbitrary Column Dropping**: When performing the final column selection, you MUST preserve ALL columns that were loaded in the raw QVS script.
-    - **Enterprise Traceability (Lineage)**: Include detailed inline M-comments before major transformation steps to show the origin and lineage of the transformation (e.g., \`// Lineage: FactSales -> ApplyMap(RegionMap) -> LEFT JOIN Customers\`).
+    2. Read the execution graph lineage nodes to understand transformations (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
+    3. Analyze the RAW QVS scripts to extract granular ETL logic, field selections, filters, and inline calculations.
+    4. Translate Qlik transformations to Power Query M strictly per the Rule Book.
+
+    ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
+
+    **[1] NO SIMULATED OR PLACEHOLDER DATA**
+    - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...) with hardcoded rows, SimulatedQVDData, SimulatedSales2025, or any fake in-memory tables.
+    - Every query must reference an actual connector expression, not sample rows.
+    - If the actual target source is unknown, emit a single-line connector stub with a clear TODO comment, never fabricate rows.
+
+    **[2] CORRECT SOURCE CONNECTORS (NO Csv.Document for QVDs, NO File.Contents-only stubs)**
+    - Detect the source platform from the QVS LIB CONNECT TO or file extension in the raw script.
+    - Map to the correct Power Query connector:
+      - SQL Server  → Sql.Database("server", "db")
+      - Oracle      → Oracle.Database("server")
+      - Databricks  → Databricks.Catalogs("host", "/sql/1.0/warehouses/id")
+      - Snowflake   → Snowflake.Databases("account.snowflakecomputing.com")
+      - Excel (.xlsx/.xls) → Excel.Workbook(File.Contents("path"), null, true)
+      - CSV (.csv)  → Csv.Document(File.Contents("path"), [Delimiter=",", Encoding=65001])
+      - QVD (.qvd)  → /* TODO: Replace with target data source connector (was QVD: "filename.qvd") */
+                      followed by Sql.Database("TODO_Server","TODO_Database") as the stub
+    - File.Contents() alone returns raw binary. NEVER use it as a final source without a parser wrapper.
+
+    **[3] INDEPENDENT INTERMEDIATE QUERIES (Power BI best practice)**
+    - Each logical staging table in the Qlik script (e.g., Sales2025_Stg, RegionMap, Customers_Stg) MUST be generated as its own separate, independent Power Query query object in the output array.
+    - Downstream/final tables (e.g., FactSales_Final) MUST reference those upstream queries by name (e.g., Source = Sales2025_Stg), NOT re-define all logic inline.
+    - This mirrors standard Power BI model architecture: separate staging queries + a final merge query.
+
+    **[4] DOWNSTREAM VALIDATION DIAGNOSTICS**
+    - For every join operation, generate a companion validation query named "<TableName>_Validation" that includes:
+      a) Duplicate key check: Table.Group to count duplicates on the join key.
+      b) Null key detection: Table.SelectRows(..., each [Key] = null) to surface orphan rows.
+      c) ApplyMap validation: Table.SelectRows on the joined lookup column to detect unmatched/null lookups.
+      d) Row count comparison: a simple record with before/after row counts.
+    - These validation queries should NOT block loading; they are informational diagnostic queries.
+
+    **[5] NO INFERRED BUSINESS LOGIC**
+    - DO NOT generate ProfitUSD, SalesBand, or ANY calculated column unless it literally exists in the raw QVS script.
+    - If you generate unmapped business logic not present in the source, the migration fails.
+
+    **[6] COLUMN PRESERVATION**
+    - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
+
+    **[7] ENTERPRISE TRACEABILITY**
+    - Add inline M-comments before every transformation step (e.g., // Lineage: FactSales -> ApplyMap(RegionMap)).
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
@@ -668,9 +700,11 @@ export async function generatePowerQueryViaAi(
     \`\`\`
 
     ### OUTPUT FORMAT:
-    Return a strictly valid JSON array of objects. Do not include markdown codeblocks (\`\`\`).
+    Return a strictly valid JSON array. Each object = one Power Query query. Include staging queries, final queries, AND validation queries as separate entries. Do not include markdown codeblocks (\`\`\`).
     [
-      { "table": "TableName", "code": "let\\n    Source = ...\\nin\\n    Source" }
+      { "table": "Sales2025_Stg", "code": "let\\n    // Staging query\\n    Source = ...\\nin\\n    Source" },
+      { "table": "FactSales_Final", "code": "let\\n    // References Sales2025_Stg\\n    Source = Sales2025_Stg,\\n    ...\\nin\\n    Source" },
+      { "table": "FactSales_Final_Validation", "code": "let\\n    // Diagnostic: duplicate + null key checks\\n    ...\\nin\\n    Source" }
     ]
   `;
 
