@@ -94,13 +94,15 @@ function sanitizeJsonString(rawJson: string): string {
 /**
  * Intelligent fetch wrapper that handles 429 Rate Limits using exponential backoff.
  */
-async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 8000): Promise<Response> {
+async function fetchWithRetry(url: string, options: RequestInit, retries = 3, initialDelay = 10000): Promise<Response> {
   let currentDelay = initialDelay;
   for (let i = 0; i < retries; i++) {
     const response = await fetch(url, options);
     if (response.status === 429 || response.status === 503) {
-      console.info(`[Gemini API] Primary model limits (${response.status}) reached. Activating failover...`);
-      return response;
+      console.info(`[Gemini API] Rate limit (${response.status}) reached on attempt ${i + 1}. Sleeping for ${currentDelay / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, currentDelay));
+      currentDelay *= 1.5; // Exponential backoff
+      continue;
     }
     return response;
   }
