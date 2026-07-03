@@ -641,8 +641,13 @@ export async function generatePowerQueryViaAi(
     2. Read the execution graph lineage nodes for that table to understand the high-level transformations applied (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
     3. Analyze the RAW SOURCE QVS scripts provided below to precisely understand the granular ETL logic, where clauses, text formatting, and inline calculations.
     4. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
-    5. You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
-    6. Ensure the generated M code is syntactically valid and production-ready.
+    
+    ### STRICT CONSTRAINTS (MANDATORY):
+    - **No Invented Business Logic**: DO NOT invent calculated columns, derived metrics (e.g., Profit = Revenue - Cost), or bucketing (e.g., SalesBand) unless they EXPLICITLY exist in the raw QVS scripts or the Rule Book. If it is not in the source code, do not write it in the M-code.
+    - **No Arbitrary Column Dropping**: When performing the final column selection or Table.SelectColumns, you MUST preserve ALL columns that were loaded in the raw QVS script. Do not drop important columns (IDs, Dates, Metrics) unless the QVS script explicitly uses a DROP FIELD statement or omits them in a subsequent resident load.
+    - **Data Source Connectors**: Qlik \`FROM [...qvd]\` statements do not have a direct Power Query equivalent. You must replace QVD loads with a standard Power Query connector (e.g., \`File.Contents("path/to/file.csv")\` or \`Sql.Database("Server", "Database")\`) and add an inline comment \`// TODO: Replace with actual target data source (was QVD)\`. Do NOT use fake functions like \`Qvd.Contents\`.
+    - **No Hallucinations**: You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
+    - Ensure the generated M code is syntactically valid and production-ready.
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
