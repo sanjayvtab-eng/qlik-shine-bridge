@@ -651,24 +651,32 @@ export async function generatePowerQueryViaAi(
     - Every query must reference an actual connector expression, not sample rows.
     - If the actual target source is unknown, emit a connector stub with a clear TODO comment, never fabricate rows.
 
-    **[2] CORRECT SOURCE CONNECTORS WITH FULL NAVIGATION TABLE**
-    - Step 1: Detect the source platform by reading the QVS LIB CONNECT TO string or file extension.
-    - Step 2: Emit the correct base connector:
-      - SQL Server  → Sql.Database("TODO_Server", "TODO_Database")
-      - Oracle      → Oracle.Database("TODO_Server")
-      - Databricks  → Databricks.Catalogs("TODO_Host", "/sql/1.0/warehouses/TODO_Id")
-      - Snowflake   → Snowflake.Databases("TODO_Account.snowflakecomputing.com")
-      - Excel       → Excel.Workbook(File.Contents("TODO_Path"), null, true)
-      - CSV         → Csv.Document(File.Contents("TODO_Path"), [Delimiter=",", Encoding=65001])
-      - QVD (unknown target) → Sql.Database("TODO_Server", "TODO_Database") /* TODO: was QVD: "filename.qvd" */
-    - Step 3 (CRITICAL for database connectors): Sql.Database(), Oracle.Database(), Databricks, and Snowflake all return navigation tables, NOT flat data tables. You MUST navigate to the actual table using:
+    **[2] SMART SOURCE CONNECTOR DETECTION WITH FULL NAVIGATION TABLE**
+    - Step 1: CAREFULLY read the raw QVS script for the exact source type:
+      a) Look for LIB CONNECT TO 'ConnectionName' statements (e.g., 'SQL Server', 'Oracle', 'Snowflake', 'Databricks').
+      b) Look for file extensions in LOAD ... FROM paths (.csv, .xlsx, .xls, .qvd).
+      c) Only default to Sql.Database if the script contains an explicit SQL connection string.
+    - Step 2: Emit the connector that EXACTLY matches the detected source, NOT a hardcoded generic one:
+      - 'SQL Server' / ODBC / OLEDB SQL → Sql.Database("TODO_Server", "TODO_Database")
+      - Oracle → Oracle.Database("TODO_Server")
+      - Databricks → Databricks.Catalogs("TODO_Host", "/sql/1.0/warehouses/TODO_Id")
+      - Snowflake → Snowflake.Databases("TODO_Account.snowflakecomputing.com")
+      - Excel (.xlsx/.xls) → Excel.Workbook(File.Contents(vSourcePath & "filename.xlsx"), null, true)
+      - CSV (.csv) → Csv.Document(File.Contents(vSourcePath & "filename.csv"), [Delimiter=",", Encoding=65001])
+      - QVD with no known target → use Sql.Database("TODO_Server", "TODO_Database") /* TODO: was QVD: "filename.qvd" — replace with your actual target connector */
+    - Step 3 (CRITICAL for database connectors): Sql.Database(), Oracle.Database(), Databricks, and Snowflake return navigation tables, NOT flat data. Navigate to the actual table:
       \`\`\`
       Source        = Sql.Database("server", "db"),
       dbo_TableName = Source{[Schema="dbo", Item="TableName"]}[Data]
       \`\`\`
       For Excel: navigate via \`{[Item="SheetName", Kind="Sheet"]}[Data]\`.
+
+    **[2b] CONSISTENT vSourcePath PARAMETER FOR ALL FILE-BASED SOURCES**
+    - ALL file-based loads (CSV, Excel, QVD) MUST use the M parameter vSourcePath for portability. NEVER hardcode absolute paths like "D:\\SourceFiles\\" or "C:\\Users\\...".
+    - At the top of EVERY generated M script that uses files, declare: vSourcePath = "TODO: Set your base source folder path here" as text
+    - Then reference it consistently: File.Contents(vSourcePath & "filename.csv")
+    - This applies uniformly to ALL file sources in the migration — no exceptions.
     - File.Contents() alone returns raw binary. NEVER use it as a final source without a proper parser wrapper.
-    - ALWAYS replace TODO placeholders with inline comments instructing the developer what to fill in.
 
     **[3] INDEPENDENT INTERMEDIATE QUERIES (Power BI best practice)**
     - Each logical staging table in the Qlik script (e.g., Sales2025_Stg, RegionMap, Customers_Stg) MUST be generated as its own separate, independent Power Query query object in the output array.
@@ -683,10 +691,14 @@ export async function generatePowerQueryViaAi(
       d) Row count comparison: a simple record with before/after row counts.
     - These validation queries should NOT block loading; they are informational diagnostic queries.
 
-    **[5] ABSOLUTE ZERO INFERRED BUSINESS LOGIC**
-    - Scan the raw QVS scripts line by line. If a calculated expression like ProfitUSD, SalesBand, or any derived metric is NOT literally present in the QVS script text, DO NOT generate it.
-    - This is the highest-priority rule. Generating ProfitUSD or SalesBand when they are absent from the source QVS = migration failure.
-    - If you are unsure whether a column exists in the QVS, DO NOT generate it. Omission is safer than invention.
+    **[5] ABSOLUTE ZERO INFERRED BUSINESS LOGIC — VERIFY BEFORE GENERATING**
+    - Before generating ANY calculated column, you MUST perform an explicit verification check:
+      STEP A: Search the Raw Source QVS Script for the exact column name (e.g., ProfitUSD, SalesBand).
+      STEP B: Search the Raw ETL QVS Script for the exact column name.
+      STEP C: Search the Migration Rule Book for the exact column name.
+      Only if found in at least one of these three sources, generate it. If absent from ALL three → DO NOT generate it.
+    - This is the highest-priority rule. Generating ProfitUSD or SalesBand when they are absent from ALL three sources = migration failure.
+    - Omission is always safer than invention. When in doubt, leave it out.
 
     **[6] COLUMN PRESERVATION**
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
