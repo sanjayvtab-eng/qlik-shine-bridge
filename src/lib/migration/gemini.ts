@@ -642,12 +642,13 @@ export async function generatePowerQueryViaAi(
     3. Analyze the RAW SOURCE QVS scripts provided below to precisely understand the granular ETL logic, where clauses, text formatting, and inline calculations.
     4. Translate these Qlik transformations into Power Query M precisely and strictly according to the Rule Book equivalents.
     
-    ### STRICT CONSTRAINTS (MANDATORY):
-    - **No Invented Business Logic**: DO NOT invent calculated columns, derived metrics (e.g., Profit = Revenue - Cost), or bucketing (e.g., SalesBand) unless they EXPLICITLY exist in the raw QVS scripts or the Rule Book. If it is not in the source code, do not write it in the M-code.
+    ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (MANDATORY):
+    - **ABSOLUTELY NO INVENTED BUSINESS LOGIC**: DO NOT invent calculated columns, derived metrics (e.g., ProfitUSD = Revenue - Cost), or bucketing (e.g., SalesBand) unless they EXPLICITLY exist in the raw QVS scripts or the Rule Book. If it is not in the source code, do not write it in the M-code. You will be penalized for hallucinating standard business logic that isn't present in the source.
     - **No Arbitrary Column Dropping**: When performing the final column selection or Table.SelectColumns, you MUST preserve ALL columns that were loaded in the raw QVS script. Do not drop important columns (IDs, Dates, Metrics) unless the QVS script explicitly uses a DROP FIELD statement or omits them in a subsequent resident load.
-    - **Data Source Connectors**: Qlik \`FROM [...qvd]\` statements do not have a direct Power Query equivalent. You must replace QVD loads with a standard Power Query connector (e.g., \`File.Contents("path/to/file.csv")\` or \`Sql.Database("Server", "Database")\`) and add an inline comment \`// TODO: Replace with actual target data source (was QVD)\`. Do NOT use fake functions like \`Qvd.Contents\`.
+    - **Intelligent Source Connectors**: Do not blindly default to Csv.Document. Analyze the Qlik connection strings (e.g., \`LIB CONNECT TO 'SQL Server'\`) or file extensions in the QVS script. Generate the corresponding Power Query connector (e.g., \`Sql.Database\`, \`Oracle.Database\`, \`Databricks.Catalogs\`, \`Snowflake.Databases\`, \`Excel.Workbook\`, \`Csv.Document\`). For QVDs, use a standard connector placeholder with an inline comment \`// TODO: Replace with actual target data source (was QVD)\`. Do NOT use fake functions like \`Qvd.Contents\`.
+    - **Production Robustness & Error Handling**: Your generated M code must be production-ready. Include error handling where appropriate, such as using \`MissingField.Ignore\` during joins/expands, handling nulls during data type conversions, and ensuring robust column selection.
+    - **Enterprise Traceability (Lineage)**: Include detailed inline M-comments before major transformation steps to show the origin and lineage of the transformation. For example: \`// Lineage: FactSales -> ApplyMap(RegionMap) -> LEFT JOIN Customers\`. This improves debugging traceability.
     - **No Hallucinations**: You MUST NOT invent, rename, or assume any transformation that is not explicitly defined in the Rule Book or present in the execution graph.
-    - Ensure the generated M code is syntactically valid and production-ready.
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
