@@ -5,7 +5,7 @@ import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
 import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
 import type { ExtractedFile } from "../MultiFileDropzone";
-import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen } from "lucide-react";
+import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen, Lock, ArrowRight } from "lucide-react";
 
 export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const { requirement, ruleBookMd, setSourceAnalysis, setEtlAnalysis, setMergedMetadata, setStageStatus } = useMigration();
@@ -17,7 +17,10 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
 
-  const bothSelected = selectedSources.length > 0 && selectedEtls.length > 0;
+  const hasRequirement = !!requirement;
+  const hasRuleBook    = !!ruleBookMd;
+  const bothSelected   = selectedSources.length > 0 && selectedEtls.length > 0;
+  const canAnalyze     = hasRequirement && hasRuleBook && bothSelected;
 
   const handleFiles = (files: ExtractedFile[]) => {
     setAllFiles(files);
@@ -199,20 +202,47 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
+      {/* Prerequisites checklist */}
+      {(!hasRequirement || !hasRuleBook || !bothSelected) && (
+        <div className="surface-card p-5 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Lock className="h-4 w-4 text-amber-500" />
+            <span>Complete these steps to unlock analysis</span>
+          </div>
+          <div className="space-y-2">
+            {[
+              { done: hasRequirement, label: "Stage 1 — Fill in the business requirement form", step: 1 },
+              { done: hasRuleBook,    label: "Stage 2 — Generate the Rule Book",                step: 2 },
+              { done: bothSelected,   label: "Stage 3 — Assign at least one Source and one ETL file above", step: 3 },
+            ].map(({ done, label, step }) => (
+              <div key={step} className={`flex items-center gap-3 text-xs px-3 py-2 rounded-lg ${
+                done ? "bg-success/5 text-success border border-success/20" : "bg-amber-500/5 text-amber-600 border border-amber-400/20"
+              }`}>
+                {done
+                  ? <Check className="h-3.5 w-3.5 shrink-0" />
+                  : <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                }
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Analyse button */}
       <div className="surface-card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h3 className="font-display text-xl font-semibold">AI Lineage Analysis Engine</h3>
           <p className="text-sm text-muted-foreground">
-            {bothSelected
-              ? `Ready to analyse ${selectedSources.length} source script(s) and ${selectedEtls.length} ETL script(s) via Gemini.`
-              : "Assign at least one Source QVS and one ETL QVS from the file panel above to enable analysis."}
+            {canAnalyze
+              ? `Ready to analyse ${selectedSources.length} source and ${selectedEtls.length} ETL script(s) via Gemini Flash.`
+              : "Complete all prerequisites above to enable analysis."}
           </p>
         </div>
         <button
           onClick={handleRunScriptAnalysis}
-          disabled={loading || !bothSelected}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 shadow-sm transition-all hover:opacity-90"
+          disabled={loading || !canAnalyze}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all hover:opacity-90"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
           {loading ? "Extracting Code Models..." : "Analyze QVS Scripts"}
