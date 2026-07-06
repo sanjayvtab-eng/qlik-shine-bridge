@@ -26,15 +26,18 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     setSelectedSource(null);
     setSelectedEtl(null);
 
-    // Proactive auto-assignment: first QVS without "etl"/"main" in name = source
-    const qvsFiles = files.filter((f) => f.extension === ".qvs" && f.parsedAsText);
-    if (qvsFiles.length >= 2) {
-      const src = qvsFiles.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? qvsFiles[0];
-      const etl = qvsFiles.find((f) => f.path !== src.path) ?? qvsFiles[1];
+    // Proactive auto-assignment: prefer .qvs files, fall back to any text file
+    const textFiles = files.filter((f) => f.parsedAsText);
+    const qvsFiles  = textFiles.filter((f) => f.extension === ".qvs");
+    const pool      = qvsFiles.length >= 2 ? qvsFiles : textFiles;
+
+    if (pool.length >= 2) {
+      const src = pool.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? pool[0];
+      const etl = pool.find((f) => f.path !== src.path) ?? pool[1];
       setSelectedSource(src);
       setSelectedEtl(etl);
-    } else if (qvsFiles.length === 1) {
-      setSelectedSource(qvsFiles[0]);
+    } else if (pool.length === 1) {
+      setSelectedSource(pool[0]);
     }
   };
 

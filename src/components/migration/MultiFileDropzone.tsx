@@ -243,18 +243,20 @@ interface FileAnalysisPanelProps {
 }
 
 export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selectedSource, selectedEtl }: FileAnalysisPanelProps) {
-  const qvsFiles  = files.filter(f => f.extension === ".qvs");
-  const csvFiles  = files.filter(f => f.extension === ".csv");
-  const totalSize = files.reduce((s, f) => s + f.sizeKb, 0);
-  const textCount = files.filter(f => f.parsedAsText).length;
+  const qvsFiles      = files.filter(f => f.extension === ".qvs");
+  const csvFiles      = files.filter(f => f.extension === ".csv");
+  const assignableFiles = files.filter(f => f.parsedAsText); // any text file can be assigned
+  const totalSize     = files.reduce((s, f) => s + f.sizeKb, 0);
+  const textCount     = files.filter(f => f.parsedAsText).length;
 
   // Build smart insights
   const insights: { icon: React.ElementType; title: string; body: string; type: "info"|"warn"|"success" }[] = [];
-  if (qvsFiles.length >= 2)   insights.push({ icon: CheckCircle2, title: "Source + ETL scripts detected", body: `${qvsFiles.length} QVS files found. Auto-assigned below — verify before running analysis.`, type: "success" });
-  if (qvsFiles.length === 1)  insights.push({ icon: AlertTriangle, title: "Only one QVS file found", body: "You need both a Source QVS and an ETL QVS. Upload the second script.", type: "warn" });
-  if (qvsFiles.length === 0)  insights.push({ icon: AlertTriangle, title: "No QVS scripts detected", body: "No .qvs files were found in the package. Migration analysis requires at least two QVS scripts.", type: "warn" });
-  if (csvFiles.length > 0)    insights.push({ icon: Database, title: `${csvFiles.length} CSV data files included`, body: "These will be referenced as source connectors in the generated Power Query M code.", type: "info" });
-  if (textCount === files.length) insights.push({ icon: Shield, title: "All files parsed successfully", body: "100% of uploaded files are readable as text and ready for analysis.", type: "success" });
+  if (qvsFiles.length >= 2)        insights.push({ icon: CheckCircle2, title: "Source + ETL scripts detected", body: `${qvsFiles.length} QVS files found. Auto-assigned below — verify before running analysis.`, type: "success" });
+  else if (assignableFiles.length >= 2) insights.push({ icon: CheckCircle2, title: `${assignableFiles.length} text files ready for assignment`, body: "Assign any two files as Source and ETL to begin analysis.", type: "info" });
+  if (qvsFiles.length === 1)       insights.push({ icon: AlertTriangle, title: "Only one QVS file found", body: "You may assign a second file as the ETL script.", type: "warn" });
+  if (assignableFiles.length < 2)  insights.push({ icon: AlertTriangle, title: "Need at least 2 text files", body: "Upload more files — at least one Source script and one ETL script are required.", type: "warn" });
+  if (csvFiles.length > 0)         insights.push({ icon: Database, title: `${csvFiles.length} CSV data files included`, body: "These will be referenced as source connectors in the generated Power Query M code.", type: "info" });
+  if (textCount > 0 && textCount === files.length) insights.push({ icon: Shield, title: "All files parsed successfully", body: "100% of uploaded files are readable as text and ready for analysis.", type: "success" });
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-500">
@@ -289,18 +291,19 @@ export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selected
         </div>
       )}
 
-      {/* ── QVS assignment ── */}
-      {qvsFiles.length > 0 && (
+      {/* ── Script assignment — shows ALL text-parseable files ── */}
+      {assignableFiles.length > 0 && (
         <div className="surface-card overflow-hidden">
           <div className="px-5 py-4 border-b border-border flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary" />
-            <span className="font-semibold text-sm">QVS Script Assignment</span>
-            <span className="ml-auto text-[11px] text-muted-foreground">Click to override auto-assignment</span>
+            <span className="font-semibold text-sm">Script Assignment</span>
+            <span className="ml-auto text-[11px] text-muted-foreground">Assign Source and ETL from any text file below</span>
           </div>
           <div className="divide-y divide-border">
-            {qvsFiles.map((f) => {
+            {assignableFiles.map((f) => {
               const isSource = selectedSource?.path === f.path;
               const isEtl    = selectedEtl?.path === f.path;
+              const Icon     = getFileIcon(f.extension);
               return (
                 <div key={f.path} className={cn(
                   "flex items-center gap-4 px-5 py-3.5 transition-all",
@@ -310,11 +313,11 @@ export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selected
                     "grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br shrink-0",
                     getFileColor(f.extension)
                   )}>
-                    <FileCode2 className="h-4 w-4 text-white" />
+                    <Icon className="h-4 w-4 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-sm font-semibold truncate">{f.path}</div>
-                    <div className="text-[11px] text-muted-foreground">{f.sizeKb} KB</div>
+                    <div className="text-[11px] text-muted-foreground">{f.extension} · {f.sizeKb} KB</div>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button onClick={() => onSelectSource(f)} className={cn(
