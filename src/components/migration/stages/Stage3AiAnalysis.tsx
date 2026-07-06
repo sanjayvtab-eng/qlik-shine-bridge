@@ -11,20 +11,20 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const { requirement, ruleBookMd, setSourceAnalysis, setEtlAnalysis, setMergedMetadata, setStageStatus } = useMigration();
 
   const [allFiles, setAllFiles] = useState<ExtractedFile[]>([]);
-  const [selectedSource, setSelectedSource] = useState<ExtractedFile | null>(null);
-  const [selectedEtl, setSelectedEtl] = useState<ExtractedFile | null>(null);
+  const [selectedSources, setSelectedSources] = useState<ExtractedFile[]>([]);
+  const [selectedEtls, setSelectedEtls] = useState<ExtractedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
 
-  const bothSelected = !!selectedSource && !!selectedEtl;
+  const bothSelected = selectedSources.length > 0 && selectedEtls.length > 0;
 
   const handleFiles = (files: ExtractedFile[]) => {
     setAllFiles(files);
     setComplete(false);
     setError(null);
-    setSelectedSource(null);
-    setSelectedEtl(null);
+    setSelectedSources([]);
+    setSelectedEtls([]);
 
     // Proactive auto-assignment: prefer .qvs files, fall back to any text file
     const textFiles = files.filter((f) => f.parsedAsText);
@@ -34,22 +34,22 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     if (pool.length >= 2) {
       const src = pool.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? pool[0];
       const etl = pool.find((f) => f.path !== src.path) ?? pool[1];
-      setSelectedSource(src);
-      setSelectedEtl(etl);
+      setSelectedSources([src]);
+      setSelectedEtls([etl]);
     } else if (pool.length === 1) {
-      setSelectedSource(pool[0]);
+      setSelectedSources([pool[0]]);
     }
   };
 
   const handleRunScriptAnalysis = async () => {
-    if (!requirement || !ruleBookMd || !selectedSource || !selectedEtl) return;
+    if (!requirement || !ruleBookMd || !bothSelected) return;
     setLoading(true);
     setError(null);
     setStageStatus(3, "in-progress");
 
     try {
-      const sourceText = selectedSource.text ?? "";
-      const etlText = selectedEtl.text ?? "";
+      const sourceText = selectedSources.map(f => f.text).join('\n\n');
+      const etlText = selectedEtls.map(f => f.text).join('\n\n');
 
       // 1. Run local parser structural mapping pass (always succeeds, used as fallback)
       const srcTables = parseSourceQvs(sourceText) || [];
@@ -116,8 +116,8 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       );
 
       // 5. Update store
-      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: selectedSource.name, text: sourceText });
-      setEtlAnalysis({ ...etlRes, etlFileName: selectedEtl.name, text: etlText });
+      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: selectedSources.map(f => f.name).join(', '), text: sourceText });
+      setEtlAnalysis({ ...etlRes, etlFileName: selectedEtls.map(f => f.name).join(', '), text: etlText });
 
       setMergedMetadata({
         businessMetadata: aiResponse.businessMetadata,
@@ -166,28 +166,34 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       {allFiles.length > 0 && (
         <FileAnalysisPanel
           files={allFiles}
-          selectedSource={selectedSource}
-          selectedEtl={selectedEtl}
-          onSelectSource={(f) => { setSelectedSource(f); setComplete(false); }}
-          onSelectEtl={(f) => { setSelectedEtl(f); setComplete(false); }}
+          selectedSources={selectedSources}
+          selectedEtls={selectedEtls}
+          onToggleSource={(f) => {
+            setSelectedSources(prev => prev.some(p => p.path === f.path) ? prev.filter(p => p.path !== f.path) : [...prev, f]);
+            setComplete(false);
+          }}
+          onToggleEtl={(f) => {
+            setSelectedEtls(prev => prev.some(p => p.path === f.path) ? prev.filter(p => p.path !== f.path) : [...prev, f]);
+            setComplete(false);
+          }}
         />
       )}
 
       {/* Assigned confirmation chips */}
-      {(selectedSource || selectedEtl) && (
-        <div className="flex flex-wrap gap-3">
-          {selectedSource && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 text-xs font-mono">
+      {(selectedSources.length > 0 || selectedEtls.length > 0) && (
+        <div className="flex flex-col gap-2">
+          {selectedSources.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 text-xs font-mono">
               <Check className="h-3.5 w-3.5 text-primary" />
               <span className="text-primary font-semibold">SOURCE:</span>
-              <span>{selectedSource.name}</span>
+              <span className="truncate">{selectedSources.map(s => s.name).join(", ")}</span>
             </div>
           )}
-          {selectedEtl && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-warning/10 border border-warning/30 text-xs font-mono">
+          {selectedEtls.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-warning/10 border border-warning/30 text-xs font-mono">
               <Check className="h-3.5 w-3.5 text-warning" />
               <span className="text-warning font-semibold">ETL:</span>
-              <span>{selectedEtl.name}</span>
+              <span className="truncate">{selectedEtls.map(e => e.name).join(", ")}</span>
             </div>
           )}
         </div>
@@ -199,8 +205,8 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
           <h3 className="font-display text-xl font-semibold">AI Lineage Analysis Engine</h3>
           <p className="text-sm text-muted-foreground">
             {bothSelected
-              ? `Ready to analyse "${selectedSource!.name}" (source) and "${selectedEtl!.name}" (ETL) via Gemini Flash.`
-              : "Assign a Source QVS and an ETL QVS from the file panel above to enable analysis."}
+              ? `Ready to analyse ${selectedSources.length} source script(s) and ${selectedEtls.length} ETL script(s) via Gemini.`
+              : "Assign at least one Source QVS and one ETL QVS from the file panel above to enable analysis."}
           </p>
         </div>
         <button

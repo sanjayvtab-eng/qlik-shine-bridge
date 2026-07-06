@@ -236,13 +236,13 @@ function InsightCard({ icon: Icon, title, body, type = "info" }:
 // ─── File Analysis Panel ──────────────────────────────────────────────────────
 interface FileAnalysisPanelProps {
   files: ExtractedFile[];
-  onSelectSource: (f: ExtractedFile) => void;
-  onSelectEtl:    (f: ExtractedFile) => void;
-  selectedSource: ExtractedFile | null;
-  selectedEtl:    ExtractedFile | null;
+  onToggleSource: (f: ExtractedFile) => void;
+  onToggleEtl:    (f: ExtractedFile) => void;
+  selectedSources: ExtractedFile[];
+  selectedEtls:    ExtractedFile[];
 }
 
-export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selectedSource, selectedEtl }: FileAnalysisPanelProps) {
+export function FileAnalysisPanel({ files, onToggleSource, onToggleEtl, selectedSources, selectedEtls }: FileAnalysisPanelProps) {
   const qvsFiles      = files.filter(f => f.extension === ".qvs");
   const csvFiles      = files.filter(f => f.extension === ".csv");
   const assignableFiles = files.filter(f => f.parsedAsText); // any text file can be assigned
@@ -301,8 +301,8 @@ export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selected
           </div>
           <div className="divide-y divide-border">
             {assignableFiles.map((f) => {
-              const isSource = selectedSource?.path === f.path;
-              const isEtl    = selectedEtl?.path === f.path;
+              const isSource = selectedSources.some(s => s.path === f.path);
+              const isEtl    = selectedEtls.some(e => e.path === f.path);
               const Icon     = getFileIcon(f.extension);
               return (
                 <div key={f.path} className={cn(
@@ -320,17 +320,17 @@ export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selected
                     <div className="text-[11px] text-muted-foreground">{f.extension} · {f.sizeKb} KB</div>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => onSelectSource(f)} className={cn(
+                    <button onClick={() => onToggleSource(f)} className={cn(
                       "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
                       isSource ? "bg-primary text-white shadow-md" : "bg-accent text-accent-foreground hover:bg-primary/20"
                     )}>
-                      {isSource ? "✓ Source" : "Set Source"}
+                      {isSource ? "✓ Source" : "+ Source"}
                     </button>
-                    <button onClick={() => onSelectEtl(f)} className={cn(
+                    <button onClick={() => onToggleEtl(f)} className={cn(
                       "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
                       isEtl ? "bg-violet-500 text-white shadow-md" : "bg-accent text-accent-foreground hover:bg-violet-500/20"
                     )}>
-                      {isEtl ? "✓ ETL" : "Set ETL"}
+                      {isEtl ? "✓ ETL" : "+ ETL"}
                     </button>
                   </div>
                 </div>
@@ -359,8 +359,8 @@ export function FileAnalysisPanel({ files, onSelectSource, onSelectEtl, selected
             <tbody className="divide-y divide-border/50">
               {files.map((f) => {
                 const Icon = getFileIcon(f.extension);
-                const isSource = selectedSource?.path === f.path;
-                const isEtl    = selectedEtl?.path === f.path;
+                const isSource = selectedSources.some(s => s.path === f.path);
+                const isEtl    = selectedEtls.some(e => e.path === f.path);
                 return (
                   <tr key={f.path} className={cn(
                     "transition-colors",
