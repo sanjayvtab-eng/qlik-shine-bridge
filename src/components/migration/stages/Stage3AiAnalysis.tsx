@@ -3,45 +3,59 @@ import { useMigration } from "@/lib/migration/store";
 import { analyzeQvsScriptsViaAi } from "@/lib/migration/gemini";
 import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
-import { FileDropzone } from "../FileDropzone";
-import { Loader2, ShieldCheck, Database, AlertCircle, Check } from "lucide-react";
+import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
+import type { ExtractedFile } from "../MultiFileDropzone";
+import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen } from "lucide-react";
 
 export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const { requirement, ruleBookMd, setSourceAnalysis, setEtlAnalysis, setMergedMetadata, setStageStatus } = useMigration();
-  
-  const [sourceRaw, setSourceRaw] = useState<{ name: string; text: string } | null>(null);
-  const [etlRaw, setEtlRaw] = useState<{ name: string; text: string } | null>(null);
+
+  const [allFiles, setAllFiles] = useState<ExtractedFile[]>([]);
+  const [selectedSource, setSelectedSource] = useState<ExtractedFile | null>(null);
+  const [selectedEtl, setSelectedEtl] = useState<ExtractedFile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
 
-  const bothUploaded = !!sourceRaw && !!etlRaw;
+  const bothSelected = !!selectedSource && !!selectedEtl;
 
-  const onSourceFile = (file: File, text: string) => {
-    setSourceRaw({ name: file.name, text });
-    setComplete(false); setError(null);
-  };
+  const handleFiles = (files: ExtractedFile[]) => {
+    setAllFiles(files);
+    setComplete(false);
+    setError(null);
+    setSelectedSource(null);
+    setSelectedEtl(null);
 
-  const onEtlFile = (file: File, text: string) => {
-    setEtlRaw({ name: file.name, text });
-    setComplete(false); setError(null);
+    // Proactive auto-assignment: first QVS without "etl"/"main" in name = source
+    const qvsFiles = files.filter((f) => f.extension === ".qvs" && f.parsedAsText);
+    if (qvsFiles.length >= 2) {
+      const src = qvsFiles.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? qvsFiles[0];
+      const etl = qvsFiles.find((f) => f.path !== src.path) ?? qvsFiles[1];
+      setSelectedSource(src);
+      setSelectedEtl(etl);
+    } else if (qvsFiles.length === 1) {
+      setSelectedSource(qvsFiles[0]);
+    }
   };
 
   const handleRunScriptAnalysis = async () => {
-    if (!requirement || !ruleBookMd || !sourceRaw || !etlRaw) return;
+    if (!requirement || !ruleBookMd || !selectedSource || !selectedEtl) return;
     setLoading(true);
     setError(null);
     setStageStatus(3, "in-progress");
 
     try {
+      const sourceText = selectedSource.text ?? "";
+      const etlText = selectedEtl.text ?? "";
+
       // 1. Run local parser structural mapping pass (always succeeds, used as fallback)
-      const srcTables = parseSourceQvs(sourceRaw.text) || [];
-      const etlRes = parseEtlQvs(etlRaw.text, srcTables);
+      const srcTables = parseSourceQvs(sourceText) || [];
+      const etlRes = parseEtlQvs(etlText, srcTables);
 
       // 2. Invoke structured semantic AI extraction with total failover protection
       let aiResponse: any;
       try {
-        aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceRaw.text, etlRaw.text);
+        aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText);
       } catch (aiErr) {
         console.info("[Stage3] AI engine unavailable (quota exceeded). Proceeding with offline local parsing...");
         aiResponse = {
@@ -62,12 +76,12 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
 
       // 3. Smart fallback: if AI returned empty tables, use local parser results
       const technicalMetadata = aiResponse.technicalMetadata;
-      
+
       if (!technicalMetadata.sourceTables?.length && srcTables.length) {
         console.info("[Stage3] AI returned no source tables — falling back to local QVS parser results.");
         technicalMetadata.sourceTables = srcTables;
       }
-      
+
       if (!technicalMetadata.finalTables?.length && etlRes.finalTables?.length) {
         console.info("[Stage3] AI returned no final tables — falling back to local ETL parser results.");
         technicalMetadata.finalTables = etlRes.finalTables.map(t => ({
@@ -87,7 +101,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         console.info("[Stage3] AI returned no execution graph — falling back to local ETL parser results.");
         technicalMetadata.executionGraph = etlRes.executionGraph;
       }
-      
+
       if (!technicalMetadata.allTables?.length && etlRes.allTables?.length) {
         technicalMetadata.allTables = etlRes.allTables;
       }
@@ -99,9 +113,9 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       );
 
       // 5. Update store
-      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: sourceRaw.name, text: sourceRaw.text });
-      setEtlAnalysis({ ...etlRes, etlFileName: etlRaw.name, text: etlRaw.text });
-      
+      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: selectedSource.name, text: sourceText });
+      setEtlAnalysis({ ...etlRes, etlFileName: selectedEtl.name, text: etlText });
+
       setMergedMetadata({
         businessMetadata: aiResponse.businessMetadata,
         technicalMetadata,
@@ -127,46 +141,68 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     }
   };
 
-
   return (
     <div className="space-y-6">
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div>
-          <FileDropzone
-            accept=".qvs,.txt"
-            onFile={onSourceFile}
-            label="Upload Source QVS"
-            description="Required. Select source connection and staging LOAD layers."
-          />
-          {sourceRaw && (
-            <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5 bg-surface-elevated p-2 rounded-lg border border-border">
-              <Check className="h-3.5 w-3.5 text-success" /> <span className="font-mono font-medium">{sourceRaw.name}</span> Ingested
-            </div>
-          )}
+      {/* Upload Section */}
+      <div className="surface-card p-6 space-y-4">
+        <div className="flex items-start gap-4 mb-2">
+          <div className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-primary shrink-0">
+            <PackageOpen className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-display text-xl font-semibold">Upload & Extraction Engine</h3>
+            <p className="text-sm text-muted-foreground">
+              Upload individual QVS/CSV files, a ZIP package, or an entire folder. The engine will extract and analyse all contents automatically.
+            </p>
+          </div>
         </div>
-        <div>
-          <FileDropzone
-            accept=".qvs,.txt"
-            onFile={onEtlFile}
-            label="Upload ETL QVS"
-            description="Required. Select calculations, Joins, Resident loads, and Drop logic."
-          />
-          {etlRaw && (
-            <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5 bg-surface-elevated p-2 rounded-lg border border-border">
-              <Check className="h-3.5 w-3.5 text-success" /> <span className="font-mono font-medium">{etlRaw.name}</span> Ingested
-            </div>
-          )}
-        </div>
+        <MultiFileDropzone onFiles={handleFiles} />
       </div>
 
+      {/* File Analysis Panel — shown after upload */}
+      {allFiles.length > 0 && (
+        <FileAnalysisPanel
+          files={allFiles}
+          selectedSource={selectedSource}
+          selectedEtl={selectedEtl}
+          onSelectSource={(f) => { setSelectedSource(f); setComplete(false); }}
+          onSelectEtl={(f) => { setSelectedEtl(f); setComplete(false); }}
+        />
+      )}
+
+      {/* Assigned confirmation chips */}
+      {(selectedSource || selectedEtl) && (
+        <div className="flex flex-wrap gap-3">
+          {selectedSource && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/30 text-xs font-mono">
+              <Check className="h-3.5 w-3.5 text-primary" />
+              <span className="text-primary font-semibold">SOURCE:</span>
+              <span>{selectedSource.name}</span>
+            </div>
+          )}
+          {selectedEtl && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-warning/10 border border-warning/30 text-xs font-mono">
+              <Check className="h-3.5 w-3.5 text-warning" />
+              <span className="text-warning font-semibold">ETL:</span>
+              <span>{selectedEtl.name}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analyse button */}
       <div className="surface-card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h3 className="font-display text-xl font-semibold">AI Lineage Analysis Engine</h3>
-          <p className="text-sm text-muted-foreground">Extract deep semantic technical schemas and verify operational constraints via Gemini Pro.</p>
+          <p className="text-sm text-muted-foreground">
+            {bothSelected
+              ? `Ready to analyse "${selectedSource!.name}" (source) and "${selectedEtl!.name}" (ETL) via Gemini Flash.`
+              : "Assign a Source QVS and an ETL QVS from the file panel above to enable analysis."}
+          </p>
         </div>
         <button
           onClick={handleRunScriptAnalysis}
-          disabled={loading || !bothUploaded}
+          disabled={loading || !bothSelected}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 shadow-sm transition-all hover:opacity-90"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
