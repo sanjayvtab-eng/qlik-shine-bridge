@@ -677,7 +677,16 @@ export async function generatePowerQueryViaAi(
     - At the top of EVERY generated M script that uses files, declare: vSourcePath = "TODO: Set your base source folder path here" as text
     - Then reference it consistently: File.Contents(vSourcePath & "filename.csv")
     - This applies uniformly to ALL file sources in the migration — no exceptions.
-    - File.Contents() alone returns raw binary. NEVER use it as a final source without a proper parser wrapper.
+
+    **[2c] CSV HEADER PROMOTION (CRITICAL)**
+    - When using \`Csv.Document\`, the first row is NOT automatically promoted to headers. The columns are named Column1, Column2, etc.
+    - You MUST add a \`Table.PromoteHeaders\` step immediately after \`Csv.Document\` BEFORE you attempt to reference any columns by name (e.g., in Table.TransformColumnTypes or Table.SelectColumns).
+    - Example:
+      \`\`\`
+      Source_Sales = Csv.Document(File.Contents(vSourcePath & "Sales.csv"), [Delimiter=",", Encoding=65001]),
+      Promoted_Sales = Table.PromoteHeaders(Source_Sales, [PromoteAllScalars=true]),
+      Typed_Sales = Table.TransformColumnTypes(Promoted_Sales, {{"SalesID", type text}})
+      \`\`\`
 
     **[3] UNIFIED QUERIES WITH SEQUENTIAL STEPS**
     - Instead of creating many separate staging queries, combine the ETL logic (Concatenate, ApplyMap, Joins, Calculated Fields) into a single, comprehensive Power Query script for each final table, just like standard sequential M code.
@@ -726,7 +735,7 @@ export async function generatePowerQueryViaAi(
     ### OUTPUT FORMAT:
     Return a strictly valid JSON array. Each object = one Power Query query. Output ONLY the required unified final tables. Do not include markdown codeblocks (\`\`\`).
     [
-      { "table": "FactSales_Final", "code": "let\\n    vSourcePath = \\"TODO: Set your base source folder path here\\" as text,\\n    // STEP 1: COMBINE SALES DATA\\n    Source_Sales2025 = Csv.Document(File.Contents(vSourcePath & \\"Sales2025.csv\\"), [Delimiter=\\",\\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\\n    ...\\nin\\n    AddedSalesBand" }
+      { "table": "FactSales_Final", "code": "let\\n    vSourcePath = \\"TODO: Set your base source folder path here\\" as text,\\n    // STEP 1: COMBINE SALES DATA\\n    Source_Sales2025 = Csv.Document(File.Contents(vSourcePath & \\"Sales2025.csv\\"), [Delimiter=\\",\\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\\n    Promoted_Sales2025 = Table.PromoteHeaders(Source_Sales2025, [PromoteAllScalars=true]),\\n    ...\\nin\\n    AddedSalesBand" }
     ]
   `;
 
