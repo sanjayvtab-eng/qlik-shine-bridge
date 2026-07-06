@@ -1,7 +1,7 @@
 import type { Requirement, BusinessMetadata, TechnicalMetadata, FinalTable, SourceTable } from "./types";
 
 // Programmatic model constants for fallback orchestration
-const PRIMARY_MODEL = "gemini-2.5-pro";
+const PRIMARY_MODEL = "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.5-flash";
 
 let isProExhausted = false;
@@ -643,6 +643,7 @@ export async function generatePowerQueryViaAi(
     2. Read the execution graph lineage nodes to understand transformations (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
     3. Analyze the RAW QVS scripts to extract granular ETL logic, field selections, filters, and inline calculations.
     4. Translate Qlik transformations to Power Query M strictly per the Rule Book.
+    5. CRITICAL: The "table" name in your JSON output MUST EXACTLY MATCH the name of the final table in the Technical Metadata (e.g., "FactSales_Final", NOT "FactSales" or "AddSalesBand").
 
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
@@ -663,7 +664,7 @@ export async function generatePowerQueryViaAi(
       - Snowflake → Snowflake.Databases("TODO_Account.snowflakecomputing.com")
       - Excel (.xlsx/.xls) → Excel.Workbook(File.Contents(vSourcePath & "filename.xlsx"), null, true)
       - CSV (.csv) → Csv.Document(File.Contents(vSourcePath & "filename.csv"), [Delimiter=",", Encoding=65001])
-      - QVD with no known target → use Sql.Database("TODO_Server", "TODO_Database") /* TODO: was QVD: "filename.qvd" — replace with your actual target connector */
+      - QVD with no known target → use Csv.Document(File.Contents(vSourcePath & "filename.csv"), [Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv]) /* TODO: was QVD: "filename.qvd" — replace with your actual target connector */
     - Step 3 (CRITICAL for database connectors): Sql.Database(), Oracle.Database(), Databricks, and Snowflake return navigation tables, NOT flat data. Navigate to the actual table:
       \`\`\`
       Source        = Sql.Database("server", "db"),
@@ -678,18 +679,18 @@ export async function generatePowerQueryViaAi(
     - This applies uniformly to ALL file sources in the migration — no exceptions.
     - File.Contents() alone returns raw binary. NEVER use it as a final source without a proper parser wrapper.
 
-    **[3] INDEPENDENT INTERMEDIATE QUERIES (Power BI best practice)**
-    - Each logical staging table in the Qlik script (e.g., Sales2025_Stg, RegionMap, Customers_Stg) MUST be generated as its own separate, independent Power Query query object in the output array.
-    - Downstream/final tables (e.g., FactSales_Final) MUST reference those upstream queries by name (e.g., Source = Sales2025_Stg), NOT re-define all logic inline.
-    - This mirrors standard Power BI model architecture: separate staging queries + a final merge query.
+    **[3] UNIFIED QUERIES WITH SEQUENTIAL STEPS**
+    - Instead of creating many separate staging queries, combine the ETL logic (Concatenate, ApplyMap, Joins, Calculated Fields) into a single, comprehensive Power Query script for each final table, just like standard sequential M code.
+    - Use clear step names and comments (e.g., // STEP 1: COMBINE SALES DATA, // STEP 2: APPLY REGION MAPPING).
+    - If you are building a final Fact table, all its preceding logic should ideally be sequential steps within its \`let\` block (e.g., \`Source = ...\`, \`JoinRegionMap = Table.NestedJoin(...)\`, \`ExpandRegionMap = ...\`, etc.).
 
-    **[4] DOWNSTREAM VALIDATION DIAGNOSTICS**
-    - For every join operation, generate a companion validation query named "<TableName>_Validation" that includes:
-      a) Duplicate key check: Table.Group to count duplicates on the join key.
-      b) Null key detection: Table.SelectRows(..., each [Key] = null) to surface orphan rows.
-      c) ApplyMap validation: Table.SelectRows on the joined lookup column to detect unmatched/null lookups.
-      d) Row count comparison: a simple record with before/after row counts.
-    - These validation queries should NOT block loading; they are informational diagnostic queries.
+    **[3b] STRICT POWER QUERY SYNTAX & VARIABLE REFERENCING**
+    - CRITICAL: Every single step in the \`let\` block MUST end with a comma (,), EXCEPT for the very last step right before the \`in\` keyword. Missing commas will cause syntax errors.
+    - CRITICAL: Do NOT reference variables that you haven't declared. If you declare \`Source_Sales2025\`, you must use \`Source_Sales2025\` in subsequent steps, NOT \`dbo_Sales2025\` or \`Sales2025\`.
+    - CRITICAL: Never hardcode local paths like "C:\\Users\\...". Always use the \`vSourcePath\` parameter exactly as: \`File.Contents(vSourcePath & "filename.csv")\`
+
+    **[4] CONSOLIDATED OUTPUT (NO DIAGNOSTIC QUERIES)**
+    - Do NOT generate separate "_Validation" or "_Stg" diagnostic queries unless explicitly requested. Keep the output clean and focused on the actual final tables required by the data model.
 
     **[5] ABSOLUTE ZERO INFERRED BUSINESS LOGIC — VERIFY BEFORE GENERATING**
     - Before generating ANY calculated column, you MUST perform an explicit verification check:
@@ -702,6 +703,10 @@ export async function generatePowerQueryViaAi(
 
     **[6] COLUMN PRESERVATION**
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
+
+    **[6b] DATA TYPING FOR ID COLUMNS**
+    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers. 
+    - Qlik often stores alphanumeric IDs (e.g., 'CUST0063'). Attempting to cast these to \`Int64.Type\` or \`type number\` in Power Query will result in fatal DataFormat.Errors.
 
     **[7] ENTERPRISE TRACEABILITY**
     - Add inline M-comments before every transformation step (e.g., // Lineage: FactSales -> ApplyMap(RegionMap)).
@@ -719,11 +724,9 @@ export async function generatePowerQueryViaAi(
     \`\`\`
 
     ### OUTPUT FORMAT:
-    Return a strictly valid JSON array. Each object = one Power Query query. Include staging queries, final queries, AND validation queries as separate entries. Do not include markdown codeblocks (\`\`\`).
+    Return a strictly valid JSON array. Each object = one Power Query query. Output ONLY the required unified final tables. Do not include markdown codeblocks (\`\`\`).
     [
-      { "table": "Sales2025_Stg", "code": "let\\n    // Staging query\\n    Source = Sql.Database(\\"TODO_Server\\", \\"TODO_Database\\"),\\n    dbo_Sales = Source{[Schema=\\"dbo\\",Item=\\"Sales\\"]}[Data]\\nin\\n    dbo_Sales" },
-      { "table": "FactSales_Final", "code": "let\\n    // References Sales2025_Stg\\n    Source = Sales2025_Stg,\\n    ...\\nin\\n    Source" },
-      { "table": "FactSales_Final_Validation", "code": "let\\n    // Diagnostic: duplicate + null key checks\\n    ...\\nin\\n    Source" }
+      { "table": "FactSales_Final", "code": "let\\n    vSourcePath = \\"TODO: Set your base source folder path here\\" as text,\\n    // STEP 1: COMBINE SALES DATA\\n    Source_Sales2025 = Csv.Document(File.Contents(vSourcePath & \\"Sales2025.csv\\"), [Delimiter=\\",\\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\\n    ...\\nin\\n    AddedSalesBand" }
     ]
   `;
 
