@@ -529,7 +529,7 @@ export function validateMigrationMetadata(business: BusinessMetadata, technical:
   };
 
   if (!business.reportName || !business.businessRequirement || !business.expectedOutput) {
-    add("error", "Business Metadata", "Requirement Input is incomplete.", "Report name, business requirement, and expected output are required before Power Query generation.");
+    add("warning", "Business Metadata", "Requirement Input is incomplete.", "Report name, business requirement, and expected output are recommended before Power Query generation, but analysis can proceed without them.");
   }
   if (!(technical.sourceTables || []).length) add("error", "Technical Metadata", "No source tables were parsed from the Source QVS.");
   if (!(technical.finalTables || []).length) add("error", "Technical Metadata", "No final surviving tables were identified from the ETL dependency graph.");
