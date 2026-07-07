@@ -15,15 +15,15 @@ function getActiveModel(preferredModel: string): string {
 }
 
 const getApiKey = (): string => {
+  const envKey = import.meta.env?.VITE_GEMINI_API_KEY || import.meta.env?.GEMINI_API_KEY;
+  if (envKey && envKey.trim() !== "") {
+    return envKey.trim();
+  }
   if (typeof window !== "undefined") {
     if ((window as any).ENV_GEMINI_API_KEY) return (window as any).ENV_GEMINI_API_KEY;
     if ((window as any).VITE_GEMINI_API_KEY) return (window as any).VITE_GEMINI_API_KEY;
     const storedKey = localStorage.getItem("GEMINI_API_KEY") || localStorage.getItem("VITE_GEMINI_API_KEY");
     if (storedKey) return storedKey.trim();
-  }
-  if (typeof import.meta !== "undefined" && import.meta.env) {
-    if (import.meta.env.VITE_GEMINI_API_KEY) return import.meta.env.VITE_GEMINI_API_KEY;
-    if (import.meta.env.GEMINI_API_KEY) return import.meta.env.GEMINI_API_KEY;
   }
   return "YOUR_GEMINI_API_KEY";
 };
