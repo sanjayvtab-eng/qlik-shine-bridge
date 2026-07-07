@@ -1,8 +1,8 @@
 import type { Requirement, BusinessMetadata, TechnicalMetadata, FinalTable, SourceTable } from "./types";
 
 // Programmatic model constants for fallback orchestration
-const PRIMARY_MODEL = "gemini-3.5-flash";
-const FALLBACK_MODEL = "gemini-3.5-flash";
+const PRIMARY_MODEL = "gemini-3.1-flash-lite";
+const FALLBACK_MODEL = "gemini-3.1-flash-lite";
 
 let isProExhausted = false;
 
