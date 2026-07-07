@@ -241,3 +241,11 @@ export interface MigrationMetadata {
   stageStatus: Record<number, "pending" | "in-progress" | "complete" | "failed">;
   stageAccuracy: Record<number, number | null>;
 }
+export interface BulkMeasureResult {
+  measureName: string;
+  qlikExpression: string;
+  variablesUsed: string[];
+  generatedDax: string;
+  status: "SUCCESS" | "ERROR";
+  confidence: number;
+}

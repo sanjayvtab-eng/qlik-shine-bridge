@@ -867,3 +867,62 @@ export async function generateSemanticModelWithGemini(
   const resultBody = await response.json();
   return resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 }
+
+export async function translateBulkMeasuresViaAi(
+  measures: { name: string; expression: string }[],
+  ruleBookMd: string
+): Promise<import('./types').BulkMeasureResult[]> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Gemini API key is missing.");
+
+  const prompt = `
+    You are an expert Qlik to Power BI DAX translator.
+    You will be provided with a JSON array of measures extracted from a Qlik expression file.
+    Translate each Qlik expression into valid Power BI DAX using the rules below.
+
+    ### MIGRATION RULE BOOK GUIDELINES:
+    ${ruleBookMd}
+
+    ### RAW MEASURES TO TRANSLATE:
+    ${JSON.stringify(measures, null, 2)}
+
+    ### TASKS FOR EACH MEASURE:
+    1. Translate the Qlik Set Analysis / Expression into Power BI DAX.
+    2. Extract the exact Qlik variables used within the expression (e.g. vCurrentYear).
+    3. Evaluate a confidence score for your translation (0-100).
+    4. Set status to "SUCCESS" if fully translated, or "ERROR" if the expression is too complex or missing dependencies to be translated accurately.
+
+    ### OUTPUT FORMAT:
+    Return a strictly valid JSON array matching this typescript interface:
+    Array<{
+      measureName: string;
+      qlikExpression: string;
+      variablesUsed: string[];
+      generatedDax: string;
+      status: "SUCCESS" | "ERROR";
+      confidence: number;
+    }>
+    Do not include markdown codeblocks (\`\`\`).
+  `;
+
+  let engineModel = getActiveModel(PRIMARY_MODEL);
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${engineModel}:generateContent?key=${apiKey}`;
+  
+  const response = await fetchWithRetry(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 8192 }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini API Error (Bulk DAX Translation): ${response.statusText}`);
+  }
+
+  const resultBody = await response.json();
+  const text = sanitizeJsonString(resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
+  return JSON.parse(text);
+}

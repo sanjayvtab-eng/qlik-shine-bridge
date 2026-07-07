@@ -4,6 +4,7 @@ import { generateDaxMeasures } from "@/lib/migration/generators";
 import { generateDaxMeasuresWithGemini } from "@/lib/migration/gemini";
 import { parseSetAnalysisFile, parseVariableLogicFile } from "@/lib/migration/rulebook";
 import { FileDropzone } from "../FileDropzone";
+import { BulkMeasureTranslator } from "../BulkMeasureTranslator";
 import { AlertCircle, ArrowRight, Check, Download, FileCode2, Loader2, Sparkles, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -273,6 +274,10 @@ export function Stage5Dax({ onNext }: { onNext?: () => void }) {
           </div>
         </>
       )}
+
+      <div className="mt-12 pt-8 border-t border-border">
+        <BulkMeasureTranslator />
+      </div>
     </div>
   );
 }
