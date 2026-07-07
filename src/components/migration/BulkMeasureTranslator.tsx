@@ -164,7 +164,6 @@ export function BulkMeasureTranslator() {
                 <tr>
                   <th className="px-4 py-3">Measure Name</th>
                   <th className="px-4 py-3">Qlik Expression</th>
-                  <th className="px-4 py-3">Variables Used</th>
                   <th className="px-4 py-3">Generated DAX</th>
                   <th className="px-4 py-3 text-center">Status</th>
                 </tr>
@@ -175,15 +174,6 @@ export function BulkMeasureTranslator() {
                     <td className="px-4 py-4 font-medium whitespace-nowrap align-top">{res.measureName}</td>
                     <td className="px-4 py-4 font-mono text-xs text-muted-foreground align-top min-w-[200px]" title={res.qlikExpression}>
                       {res.qlikExpression}
-                    </td>
-                    <td className="px-4 py-4 align-top">
-                      <div className="flex flex-wrap gap-1.5">
-                        {res.variablesUsed?.map((v, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-50 text-blue-600 border border-blue-100">
-                            {v}
-                          </span>
-                        ))}
-                      </div>
                     </td>
                     <td className="px-4 py-4 align-top w-full">
                       <div className="relative group min-w-[300px]">
