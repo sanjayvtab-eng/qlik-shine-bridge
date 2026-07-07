@@ -1,8 +1,8 @@
 import type { Requirement, BusinessMetadata, TechnicalMetadata, FinalTable, SourceTable } from "./types";
 
 // Programmatic model constants for fallback orchestration
-const PRIMARY_MODEL = "gemini-1.5-flash";
-const FALLBACK_MODEL = "gemini-1.5-flash";
+const PRIMARY_MODEL = "gemini-3.5-flash";
+const FALLBACK_MODEL = "gemini-3.5-flash";
 
 let isProExhausted = false;
 
@@ -641,7 +641,18 @@ export async function generatePowerQueryViaAi(
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
 
-  const prompt = `
+  const finalTables = technicalMetadata.finalTables || [];
+  if (finalTables.length === 0) return [];
+
+  const results: { table: string; code: string }[] = [];
+  const CHUNK_SIZE = 2; // Process in chunks of 2 tables to prevent 503 Deadline Exceeded
+  let pqEngineModel = getActiveModel(PRIMARY_MODEL);
+
+  for (let i = 0; i < finalTables.length; i += CHUNK_SIZE) {
+    const chunk = finalTables.slice(i, i + CHUNK_SIZE);
+    const chunkMetadata = { ...technicalMetadata, finalTables: chunk };
+
+    const prompt = `
     You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler.
     Your ONLY source of truth is the Migration Rule Book and the knowledge files provided below. Generate production-ready Power Query M code strictly from the raw QVS scripts.
 
@@ -744,7 +755,7 @@ export async function generatePowerQueryViaAi(
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
-    - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
+    - Technical Schema Blueprint: ${JSON.stringify(chunkMetadata)}
     - Raw Source QVS Script:
     \`\`\`qlik
     ${sourceQvsText || "No source script provided."}
@@ -761,30 +772,34 @@ export async function generatePowerQueryViaAi(
     ]
   `;
 
-  let pqEngineModel = getActiveModel(PRIMARY_MODEL);
+    try {
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
+      const response = await fetchWithRetry(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+        })
+      });
 
-  try {
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
-    const response = await fetchWithRetry(apiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-      })
-    });
+      if (!response.ok) {
+        throw new Error(`Gemini API Error: ${response.statusText}`);
+      }
 
-    if (!response.ok) {
-      throw new Error(`Gemini API Error: ${response.statusText}`);
+      const data = await response.json();
+      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+      const chunkResults = JSON.parse(sanitizeJsonString(resultText));
+      if (Array.isArray(chunkResults)) {
+        results.push(...chunkResults);
+      }
+    } catch (error) {
+      console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
+      throw error;
     }
-
-    const data = await response.json();
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-    return JSON.parse(sanitizeJsonString(resultText));
-  } catch (error) {
-    console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
-    throw error;
   }
+
+  return results;
 }
 
 export async function generateDaxMeasuresWithGemini(
