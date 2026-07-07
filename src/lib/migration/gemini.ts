@@ -732,6 +732,12 @@ export async function generatePowerQueryViaAi(
     - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers. 
     - Qlik often stores alphanumeric IDs (e.g., 'CUST0063'). Attempting to cast these to \`Int64.Type\` or \`type number\` in Power Query will result in fatal DataFormat.Errors.
 
+    **[6c] TYPE SAFETY FOR NUMERICAL COMPARISONS (CRITICAL)**
+    - In Power Query, comparing a text column to a number (e.g., \`[RevenueUSD] > 10000\`) throws a fatal \`Expression.Error: We cannot apply operator < to types Number and Text\`.
+    - You MUST explicitly wrap all column references in \`Number.From(...)\` when performing numerical comparisons or conditional logic, just as you do for arithmetic.
+    - Incorrect: \`each if [RevenueUSD] > 10000 then "High" else "Low"\`
+    - Correct: \`each if Number.From([RevenueUSD]) > 10000 then "High" else "Low"\`
+
     **[7] ENTERPRISE TRACEABILITY**
     - Add inline M-comments before every transformation step (e.g., // Lineage: FactSales -> ApplyMap(RegionMap)).
 
