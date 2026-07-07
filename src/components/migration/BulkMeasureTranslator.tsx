@@ -33,8 +33,10 @@ export function BulkMeasureTranslator() {
 
     try {
       const data = await parseFile(f);
-      if (data.length === 0) {
-        toast.error("No valid rows found in file.");
+      console.log("Parsed Excel/CSV data:", data);
+      
+      if (!data || data.length === 0) {
+        toast.error("No valid rows found in file. Ensure headers contain 'Measure/Name' and 'Expression/Formula'.");
         setParsing(false);
         return;
       }
@@ -43,8 +45,14 @@ export function BulkMeasureTranslator() {
       setTranslating(true);
 
       const translated = await translateBulkMeasuresViaAi(data, ruleBookMd || "");
-      setResults(translated);
-      toast.success(`Successfully translated ${translated.length} measures!`);
+      console.log("Translated results array:", translated);
+      
+      if (!Array.isArray(translated) || translated.length === 0) {
+        toast.error("AI returned empty results. Check console for raw output.");
+      } else {
+        setResults(translated);
+        toast.success(`Successfully translated ${translated.length} measures!`);
+      }
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to process file");
@@ -71,7 +79,12 @@ export function BulkMeasureTranslator() {
           const exprKey = keys.find(k => k.toLowerCase().includes("expression") || k.toLowerCase().includes("qlik") || k.toLowerCase().includes("formula"));
           
           if (nameKey && exprKey) {
-            return { name: row[nameKey], expression: row[exprKey] };
+            return { name: String(row[nameKey]), expression: String(row[exprKey]) };
+          }
+          
+          // Fallback: just use the first two columns
+          if (keys.length >= 2) {
+            return { name: String(row[keys[0]]), expression: String(row[keys[1]]) };
           }
           return null;
         }).filter(Boolean) as { name: string; expression: string }[];

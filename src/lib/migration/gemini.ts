@@ -923,6 +923,17 @@ export async function translateBulkMeasuresViaAi(
   }
 
   const resultBody = await response.json();
-  const text = sanitizeJsonString(resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "[]");
-  return JSON.parse(text);
+  const text = resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+  console.log("Raw AI Bulk Response:", text);
+  
+  // Try to clean markdown formatting if AI still wrapped it
+  let cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  
+  try {
+    const parsed = JSON.parse(cleanText);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("Failed to parse AI response:", cleanText);
+    throw new Error("AI returned invalid JSON format.");
+  }
 }
