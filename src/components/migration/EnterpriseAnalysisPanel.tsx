@@ -503,9 +503,6 @@ function TabMQueryDataTypes({
     setGeneratingAi(true);
     setAiError(null);
     try {
-      // Apply the types locally to the semantic model
-      onApplyTypes();
-      
       // Pass the edits to the AI so it strictly uses them in the M query
       const aiOutput = await generatePowerQueryViaAi(
         businessMetadata, 
@@ -523,7 +520,20 @@ function TabMQueryDataTypes({
         }
       });
       setAiQueries(newMQueries);
-      onAnalysisUpdate({ ...analysis, mQueries: { ...analysis.mQueries, ...newMQueries } });
+      
+      // Safely apply types locally without triggering a full engine re-run
+      const updatedTypes = { ...analysis.columnTypes };
+      Object.entries(columnTypeEdits).forEach(([key, val]) => {
+        const [t, c] = key.split(".");
+        if (!updatedTypes[t]) updatedTypes[t] = {};
+        updatedTypes[t][c] = val;
+      });
+      
+      onAnalysisUpdate({ 
+        ...analysis, 
+        columnTypes: updatedTypes,
+        mQueries: { ...analysis.mQueries, ...newMQueries } 
+      });
     } catch (e) {
       setAiError("Failed to generate M Query: " + (e instanceof Error ? e.message : String(e)));
     } finally {
