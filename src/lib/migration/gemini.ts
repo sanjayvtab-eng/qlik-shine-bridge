@@ -176,12 +176,15 @@ export async function analyzeQvsScriptsViaAi(
     concatenateOperations: stage3A.concatenateOperations || [],
     renameOperations: stage3B.renameOperations || [],
     filters: stage3B.filters || [],
-    sourceTables: stage3A.sourceTables || [],
-    allTables: stage3A.allTables || [],
-    finalTables: stage3A.finalTables || [],
+    sourceTables: (stage3A.sourceTables && stage3A.sourceTables.length > 0) ? stage3A.sourceTables : (parserHints?.srcTables || []),
+    allTables: (stage3A.allTables && stage3A.allTables.length > 0) ? stage3A.allTables : [
+      ...(parserHints?.srcTables || []).map((t: any) => ({ name: t.name, stepType: "SOURCE" })),
+      ...(parserHints?.etlRes?.finalTables || []).map((t: any) => ({ name: t.name, stepType: "FINAL" }))
+    ],
+    finalTables: (stage3A.finalTables && stage3A.finalTables.length > 0) ? stage3A.finalTables : (parserHints?.etlRes?.finalTables || []),
     relationships: stage3B.relationships || [],
     variables: stage3B.variables || {},
-    executionGraph: stage3A.executionGraph || []
+    executionGraph: (stage3A.executionGraph && stage3A.executionGraph.length > 0) ? stage3A.executionGraph : (parserHints?.etlRes?.executionGraph || [])
   };
 
   const executionMetrics = {
