@@ -214,7 +214,8 @@ function TabSourceMapping({
     if (!bulkFolder.trim()) return;
     const updated = mappingRows.map(r => {
       if (r.bypassQvd || r.status === "Bypassed") return r;
-      const basename = (r.originalRef.split("/").pop() || r.originalRef.split("\\").pop() || "").split("?")[0];
+      const rawPath = r.originalRef.replace(/^\$\([^)]+\)/, "");
+      const basename = (rawPath.split("/").pop() || rawPath.split("\\").pop() || "").split("?")[0];
       if (!basename) return r;
       const sep = bulkFolder.includes("\\") || /^[A-Za-z]:/.test(bulkFolder) ? "\\" : "/";
       const mapped = bulkFolder.replace(/[/\\]+$/, "") + sep + basename;
@@ -324,6 +325,11 @@ function TabSourceMapping({
 // ────────────────────────────────────────────────────────────────
 
 function TabAllTables({ analysis }: { analysis: EnterpriseAnalysis }) {
+  const getMapped = (src: string) => {
+    const map = analysis.sourceMappings.find(m => m.originalRef === src);
+    return map ? map.mappedRef : src;
+  };
+
   return (
     <div className="space-y-5">
       <div className="surface-card p-4">
@@ -331,7 +337,7 @@ function TabAllTables({ analysis }: { analysis: EnterpriseAnalysis }) {
         <DataTable rows={Object.values(analysis.profiles).map(p => ({
           Table: p.table, Classification: p.classification, Status: p.status,
           Confidence: p.confidence, Reason: p.reason,
-          Fields: p.fields.length, Sources: p.sourceRefs.join(", "), Dependencies: p.dependencies.join(", "),
+          Fields: p.fields.length, Sources: p.sourceRefs.map(getMapped).join(", "), Dependencies: p.dependencies.join(", "),
         }))} />
       </div>
       <div className="surface-card p-4">
@@ -339,7 +345,7 @@ function TabAllTables({ analysis }: { analysis: EnterpriseAnalysis }) {
         <DataTable rows={analysis.operations.map(o => ({
           Operation: o.id, Table: o.table, Type: o.opType, Role: o.role,
           File: o.file, Lines: `${o.startLine}-${o.endLine}`,
-          Sources: o.sourceRefs.join(", "), Resident: o.resident.join(", "),
+          Sources: o.sourceRefs.map(getMapped).join(", "), Resident: o.resident.join(", "),
           "Join Target": o.joinTarget, "Concat Target": o.concatTarget,
         }))} />
       </div>
@@ -395,7 +401,10 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
           {p.sourceRefs.length > 0 && (
             <div className="surface-card p-4">
               <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">Sources</h5>
-              {p.sourceRefs.map(s => <div key={s} className="text-xs font-mono text-muted-foreground">{s}</div>)}
+              {p.sourceRefs.map(s => {
+                const mapped = analysis.sourceMappings.find(m => m.originalRef === s)?.mappedRef || s;
+                return <div key={s} className="text-xs font-mono text-muted-foreground">{mapped}</div>;
+              })}
             </div>
           )}
 
