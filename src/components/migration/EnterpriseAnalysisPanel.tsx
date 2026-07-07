@@ -18,6 +18,7 @@ import {
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
+import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
 // ────────────────────────────────────────────────────────────────
 // Types
@@ -657,9 +658,15 @@ function TabDaxMeasures({ analysis }: { analysis: EnterpriseAnalysis }) {
     Table: m.table, Confidence: m.confidence, Notes: m.notes, Warning: m.warning, Source: m.source,
   }));
   return (
-    <div className="surface-card p-4">
-      <SectionHeader title="Consolidated DAX Measures" sub="Aggregations auto-translated from Qlik to DAX" />
-      {rows.length ? <DataTable rows={rows} /> : <p className="text-xs text-muted-foreground">No aggregation expressions converted.</p>}
+    <div className="surface-card p-4 space-y-8">
+      <div>
+        <SectionHeader title="Consolidated DAX Measures" sub="Aggregations auto-translated from Qlik to DAX" />
+        {rows.length ? <DataTable rows={rows} /> : <p className="text-xs text-muted-foreground">No aggregation expressions converted.</p>}
+      </div>
+      
+      <div className="border-t border-border pt-6">
+        <BulkMeasureTranslator />
+      </div>
     </div>
   );
 }
