@@ -643,7 +643,8 @@ export async function generatePowerQueryViaAi(
   ruleBookMd: string,
   sourceQvsText?: string,
   etlQvsText?: string,
-  columnTypeEdits?: Record<string, string>
+  columnTypeEdits?: Record<string, string>,
+  onProgress?: (msg: string) => void
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -658,6 +659,7 @@ export async function generatePowerQueryViaAi(
   for (let i = 0; i < finalTables.length; i += CHUNK_SIZE) {
     const chunk = finalTables.slice(i, i + CHUNK_SIZE);
     const chunkMetadata = { ...technicalMetadata, finalTables: chunk };
+    if (onProgress) onProgress(`Compiling M Query for chunk ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(finalTables.length / CHUNK_SIZE)}...`);
 
     const prompt = `
     You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler.

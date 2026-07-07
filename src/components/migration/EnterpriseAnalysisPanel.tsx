@@ -492,6 +492,7 @@ function TabMQueryDataTypes({
 }) {
   const { businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText } = useMigration();
   const [generatingAi, setGeneratingAi] = useState(false);
+  const [generatingMsg, setGeneratingMsg] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiQueries, setAiQueries] = useState<Record<string, string> | null>(null);
 
@@ -510,7 +511,8 @@ function TabMQueryDataTypes({
         ruleBookMd, 
         sourceQvsText, 
         etlQvsText, 
-        columnTypeEdits
+        columnTypeEdits,
+        setGeneratingMsg
       );
       
       const newMQueries: Record<string, string> = {};
@@ -538,6 +540,7 @@ function TabMQueryDataTypes({
       setAiError("Failed to generate M Query: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setGeneratingAi(false);
+      setGeneratingMsg(null);
     }
   };
 
@@ -615,7 +618,7 @@ function TabMQueryDataTypes({
             {!aiQueries && (
               <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all">
                 {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {generatingAi ? "Compiling..." : "Generate M Query"}
+                {generatingAi ? (generatingMsg || "Compiling...") : "Generate M Query"}
               </button>
             )}
             {aiQueries && (
