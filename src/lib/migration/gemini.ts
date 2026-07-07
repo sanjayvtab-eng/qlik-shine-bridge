@@ -781,30 +781,45 @@ export async function generatePowerQueryViaAi(
     ]
   `;
 
-    try {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
-      const response = await fetchWithRetry(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-        })
-      });
+    let chunkSuccess = false;
+    let retries = 0;
+    while (!chunkSuccess && retries < 3) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
+        const response = await fetchWithRetry(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+          })
+        });
 
-      if (!response.ok) {
-        throw new Error(`Gemini API Error: ${response.statusText}`);
-      }
+        if (!response.ok) {
+          throw new Error(`Gemini API Error: ${response.statusText}`);
+        }
 
-      const data = await response.json();
-      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-      const chunkResults = JSON.parse(sanitizeJsonString(resultText));
-      if (Array.isArray(chunkResults)) {
-        results.push(...chunkResults);
+        const data = await response.json();
+        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+        
+        try {
+          const chunkResults = JSON.parse(sanitizeJsonString(resultText));
+          if (Array.isArray(chunkResults)) {
+            results.push(...chunkResults);
+          }
+          chunkSuccess = true;
+        } catch (parseError) {
+          console.warn(`[Power Query AI] JSON Parse failed for chunk ${i}. Retrying (${retries + 1}/3)...`, parseError);
+          throw parseError; // Caught by the outer catch to trigger retry
+        }
+      } catch (error) {
+        retries++;
+        if (retries >= 3) {
+          console.error(`[Power Query AI] ${pqEngineModel} failed after 3 retries for chunk.`);
+          throw error;
+        }
+        await new Promise(r => setTimeout(r, 2000)); // wait before retry
       }
-    } catch (error) {
-      console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
-      throw error;
     }
   }
 
