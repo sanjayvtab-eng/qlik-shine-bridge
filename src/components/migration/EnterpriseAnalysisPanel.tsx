@@ -503,7 +503,19 @@ function TabMQueryDataTypes({
     setGeneratingAi(true);
     setAiError(null);
     try {
-      const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText);
+      // Apply the types locally to the semantic model
+      onApplyTypes();
+      
+      // Pass the edits to the AI so it strictly uses them in the M query
+      const aiOutput = await generatePowerQueryViaAi(
+        businessMetadata, 
+        technicalMetadata, 
+        ruleBookMd, 
+        sourceQvsText, 
+        etlQvsText, 
+        columnTypeEdits
+      );
+      
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
         if (q.table && q.code) {
@@ -523,7 +535,6 @@ function TabMQueryDataTypes({
   const [activeTable, setActiveTable] = useState(0);
   const tables = Object.keys(mq).sort();
   const [tableFilter, setTableFilter] = useState("All");
-  const diag = analysis.mQueryDiagnostics || [];
 
   const downloadAll = () => {
     const txt = combinedMQueriesText(mq);
@@ -535,12 +546,59 @@ function TabMQueryDataTypes({
 
   return (
     <div className="space-y-5">
+      <div className="surface-card p-4 border border-border">
+        <SectionHeader title="Data Type Designer" sub="Select explicit data types for columns. These are injected into the safe M type-conversion step." />
+        <div className="flex items-center gap-3 mb-3">
+          <select value={tableFilter} onChange={e => setTableFilter(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border border-border bg-surface text-xs text-foreground">
+            <option>All</option>
+            {Object.keys(analysis.columnTypes).map(t => <option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className="overflow-auto rounded-xl border border-border max-h-96">
+          <table className="w-full text-xs">
+            <thead className="bg-surface-elevated border-b border-border sticky top-0 z-10">
+              <tr>
+                {["Table","Column","Power BI Data Type","Confidence","Inference Source"].map(h =>
+                  <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(analysis.columnTypes)
+                .filter(([t]) => tableFilter === "All" || t === tableFilter)
+                .flatMap(([table, cols]) =>
+                  Object.entries(cols).map(([col, dtype]) => {
+                    const editKey = `${table}.${col}`;
+                    const meta = (analysis.columnTypeMeta[table] || {})[col];
+                    return (
+                      <tr key={editKey} className="border-b border-border/30">
+                        <td className="px-3 py-1.5 text-foreground/70">{table}</td>
+                        <td className="px-3 py-1.5 font-mono text-foreground/80">{col}</td>
+                        <td className="px-3 py-1.5">
+                          <select value={columnTypeEdits[editKey] ?? dtype}
+                            onChange={e => onTypeChange(editKey, e.target.value)}
+                            className="px-2 py-1 rounded border border-border bg-surface text-xs text-foreground">
+                            {TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{meta?.confidence ?? ""}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{meta?.source ?? "Inferred"}</td>
+                      </tr>
+                    );
+                  })
+                )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="surface-card p-6 border border-border">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
           <div>
             <h3 className="font-display text-xl font-semibold">Generated Power Query M</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Unroll mapped lineage structures into production-ready Power Query scripts. No templates are utilized.
+              Unroll mapped lineage structures into production-ready Power Query scripts. Data types explicitly selected above are injected into the AI compiler.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -585,63 +643,6 @@ function TabMQueryDataTypes({
             {tables[activeTable] && <CodeBlock code={mq[tables[activeTable]] || ""} />}
           </>
         )}
-      </div>
-
-      <div className="surface-card p-4">
-        <SectionHeader title="M Query Static Diagnostics" sub="Pre-flight checks before Power BI Desktop open" />
-        <DataTable rows={diag} />
-      </div>
-
-      <div className="surface-card p-4">
-        <SectionHeader title="Data Type Designer" sub="Selections written into safe M type-conversion step and model.bim" />
-        <div className="flex items-center gap-3 mb-3">
-          <select value={tableFilter} onChange={e => setTableFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-border bg-surface text-xs text-foreground">
-            <option>All</option>
-            {Object.keys(analysis.columnTypes).map(t => <option key={t}>{t}</option>)}
-          </select>
-          <button onClick={onApplyTypes} disabled={applyingTypes}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
-            {applyingTypes ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Apply Types & Regenerate M
-          </button>
-        </div>
-        <div className="overflow-auto rounded-xl border border-border">
-          <table className="w-full text-xs">
-            <thead className="bg-surface-elevated border-b border-border">
-              <tr>
-                {["Table","Column","Power BI Data Type","Confidence","Inference Source"].map(h =>
-                  <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(analysis.columnTypes)
-                .filter(([t]) => tableFilter === "All" || t === tableFilter)
-                .flatMap(([table, cols]) =>
-                  Object.entries(cols).map(([col, dtype]) => {
-                    const editKey = `${table}.${col}`;
-                    const meta = (analysis.columnTypeMeta[table] || {})[col];
-                    return (
-                      <tr key={editKey} className="border-b border-border/30">
-                        <td className="px-3 py-1.5 text-foreground/70">{table}</td>
-                        <td className="px-3 py-1.5 font-mono text-foreground/80">{col}</td>
-                        <td className="px-3 py-1.5">
-                          <select value={columnTypeEdits[editKey] ?? dtype}
-                            onChange={e => onTypeChange(editKey, e.target.value)}
-                            className="px-2 py-1 rounded border border-border bg-surface text-xs text-foreground">
-                            {TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
-                          </select>
-                        </td>
-                        <td className="px-3 py-1.5 text-muted-foreground">{meta?.confidence ?? ""}</td>
-                        <td className="px-3 py-1.5 text-muted-foreground">{meta?.source ?? "Inferred"}</td>
-                      </tr>
-                    );
-                  })
-                )}
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   );

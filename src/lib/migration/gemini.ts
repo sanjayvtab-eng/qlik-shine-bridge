@@ -635,7 +635,8 @@ export async function generatePowerQueryViaAi(
   technicalMetadata: TechnicalMetadata,
   ruleBookMd: string,
   sourceQvsText?: string,
-  etlQvsText?: string
+  etlQvsText?: string,
+  columnTypeEdits?: Record<string, string>
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -652,6 +653,12 @@ export async function generatePowerQueryViaAi(
 
     ### COMPLETE RULEBOOK REFERENCE (General Translation Rules):
     ${qlikToPbiCompleteRulebook}
+
+    ${columnTypeEdits && Object.keys(columnTypeEdits).length > 0 ? `
+    ### EXPLICIT DATA TYPE OVERRIDES:
+    The user has explicitly defined the data types for specific columns. You MUST apply these exact Power BI data types using Table.TransformColumnTypes. Do NOT infer data types for these columns; use the provided overrides.
+    ${Object.entries(columnTypeEdits).map(([key, type]) => `- ${key} -> ${type}`).join("\\n    ")}
+    ` : ""}
 
     ### CORE OBJECTIVES:
     1. Iterate over every final table defined in the Technical Metadata.
