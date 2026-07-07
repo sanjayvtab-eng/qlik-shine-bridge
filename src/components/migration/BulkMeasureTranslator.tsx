@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useDropzone } from "react-dropzone";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { Upload, FileSpreadsheet, Loader2, CheckCircle2, XCircle, Copy, Check } from "lucide-react";
+import { Upload, FileSpreadsheet, Loader2, CheckCircle2, XCircle, Copy, Check, Download } from "lucide-react";
 import { translateBulkMeasuresViaAi } from "@/lib/migration/gemini";
 import { useMigration } from "@/lib/migration/store";
 import type { BulkMeasureResult } from "@/lib/migration/types";
@@ -128,6 +128,25 @@ export function BulkMeasureTranslator() {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
+  const downloadCsv = () => {
+    if (!results.length) return;
+    const csv = Papa.unparse(results.map(r => ({
+      "Measure Name": r.measureName,
+      "Qlik Expression": r.qlikExpression,
+      "Generated DAX": r.generatedDax,
+      "Confidence": `${r.confidence}%`,
+      "Status": r.status
+    })));
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "translated_dax_measures.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -157,7 +176,17 @@ export function BulkMeasureTranslator() {
       )}
 
       {results.length > 0 && (
-        <div className="rounded-xl border border-border overflow-hidden bg-surface">
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button
+              onClick={downloadCsv}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-surface hover:bg-surface-elevated text-xs font-medium transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </button>
+          </div>
+          <div className="rounded-xl border border-border overflow-hidden bg-surface">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider bg-surface-elevated border-b border-border">
@@ -209,6 +238,7 @@ export function BulkMeasureTranslator() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
     </div>
