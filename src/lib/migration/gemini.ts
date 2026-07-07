@@ -15,17 +15,17 @@ function getActiveModel(preferredModel: string): string {
 }
 
 const getApiKey = (): string => {
+  if (typeof window !== "undefined") {
+    const storedKey = localStorage.getItem("GEMINI_API_KEY") || localStorage.getItem("VITE_GEMINI_API_KEY");
+    if (storedKey && storedKey.trim() !== "") return storedKey.trim();
+    if ((window as any).ENV_GEMINI_API_KEY) return (window as any).ENV_GEMINI_API_KEY;
+    if ((window as any).VITE_GEMINI_API_KEY) return (window as any).VITE_GEMINI_API_KEY;
+  }
   const envKey = import.meta.env?.VITE_GEMINI_API_KEY || import.meta.env?.GEMINI_API_KEY;
   if (envKey && envKey.trim() !== "") {
     return envKey.trim();
   }
-  if (typeof window !== "undefined") {
-    if ((window as any).ENV_GEMINI_API_KEY) return (window as any).ENV_GEMINI_API_KEY;
-    if ((window as any).VITE_GEMINI_API_KEY) return (window as any).VITE_GEMINI_API_KEY;
-    const storedKey = localStorage.getItem("GEMINI_API_KEY") || localStorage.getItem("VITE_GEMINI_API_KEY");
-    if (storedKey) return storedKey.trim();
-  }
-  return "YOUR_GEMINI_API_KEY";
+  return "";
 };
 
 function compressQvsScriptForAi(text: string): string {
