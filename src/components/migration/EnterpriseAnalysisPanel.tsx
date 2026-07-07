@@ -510,9 +510,7 @@ function TabMQueryDataTypes({
         technicalMetadata, 
         ruleBookMd, 
         sourceQvsText, 
-        etlQvsText, 
-        columnTypeEdits,
-        setGeneratingMsg
+        etlQvsText, undefined, setGeneratingMsg
       );
       
       const newMQueries: Record<string, string> = {};
@@ -559,6 +557,58 @@ function TabMQueryDataTypes({
 
   return (
     <div className="space-y-5">
+      <div className="surface-card p-6 border border-border">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <div>
+            <h3 className="font-display text-xl font-semibold">Generated Power Query M</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Unroll mapped lineage structures into production-ready Power Query scripts. No templates are utilized.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {!aiQueries && (
+              <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all">
+                {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {generatingAi ? (generatingMsg || "Compiling...") : "Generate M Query"}
+              </button>
+            )}
+            {aiQueries && (
+              <>
+                <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50">
+                  {generatingAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Regenerate
+                </button>
+                <button onClick={downloadAll} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated">
+                  <Download className="h-3.5 w-3.5" /> Download All (.txt)
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        
+        {aiError && (
+          <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-xs flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+            <div className="text-destructive/90">{aiError}</div>
+          </div>
+        )}
+
+        {aiQueries && (
+          <>
+            <div className="flex gap-1 overflow-x-auto pb-3 border-b border-border mb-3">
+              {tables.map((t, i) => (
+                <button key={t} onClick={() => setActiveTable(i)}
+                  className={cn("px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all",
+                    activeTable === i ? "bg-primary text-primary-foreground shadow-sm" : "border border-border text-muted-foreground hover:text-foreground hover:bg-surface-elevated")}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {tables[activeTable] && <CodeBlock code={mq[tables[activeTable]] || ""} />}
+          </>
+        )}
+      </div>
+
       <div className="surface-card p-4 border border-border">
         <SectionHeader title="Data Type Designer" sub="Select explicit data types for columns. These are injected into the safe M type-conversion step." />
         <div className="flex items-center gap-3 mb-3">
@@ -604,58 +654,6 @@ function TabMQueryDataTypes({
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="surface-card p-6 border border-border">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-          <div>
-            <h3 className="font-display text-xl font-semibold">Generated Power Query M</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Unroll mapped lineage structures into production-ready Power Query scripts. Data types explicitly selected above are injected into the AI compiler.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {!aiQueries && (
-              <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all">
-                {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {generatingAi ? (generatingMsg || "Compiling...") : "Generate M Query"}
-              </button>
-            )}
-            {aiQueries && (
-              <>
-                <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50">
-                  {generatingAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Regenerate
-                </button>
-                <button onClick={downloadAll} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated">
-                  <Download className="h-3.5 w-3.5" /> Download All (.txt)
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-        
-        {aiError && (
-          <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-xs flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
-            <div className="text-destructive/90">{aiError}</div>
-          </div>
-        )}
-
-        {aiQueries && (
-          <>
-            <div className="flex gap-1 overflow-x-auto pb-3 border-b border-border mb-3">
-              {tables.map((t, i) => (
-                <button key={t} onClick={() => setActiveTable(i)}
-                  className={cn("px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition-all",
-                    activeTable === i ? "bg-primary text-primary-foreground shadow-sm" : "border border-border text-muted-foreground hover:text-foreground hover:bg-surface-elevated")}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            {tables[activeTable] && <CodeBlock code={mq[tables[activeTable]] || ""} />}
-          </>
-        )}
       </div>
     </div>
   );
