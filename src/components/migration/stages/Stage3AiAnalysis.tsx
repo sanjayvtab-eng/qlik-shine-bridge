@@ -5,6 +5,7 @@ import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
 import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
 import type { ExtractedFile } from "../MultiFileDropzone";
+import { EnterpriseAnalysisPanel } from "../EnterpriseAnalysisPanel";
 import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen, Lock, ArrowRight } from "lucide-react";
 
 export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
@@ -261,11 +262,23 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
           <ShieldCheck className="h-10 w-10 text-success" />
           <div className="font-semibold text-lg text-foreground">Code Metadata Generation Complete</div>
           <p className="text-sm text-muted-foreground max-w-md">
-            Surviving data schemas, table relationships, and operations are mapped. Stage 4 Power Query generation is unlocked.
+            Surviving data schemas, table relationships, and operations are mapped. Scroll down to the Enterprise Workbench to generate Power Query M and export your model.
           </p>
-          <button onClick={onNext} className="mt-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm">
-            Proceed to Generate Power Query M
-          </button>
+        </div>
+      )}
+
+      {/* ── Enterprise Migration Workbench ─────────────────────────────────── */}
+      {allFiles.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-1">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Enterprise Analysis Engine</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <p className="text-xs text-muted-foreground px-1">
+            Full 10-stage Qlik → Power BI pipeline: source mapping, QVD bypass, M query generation, data types, DAX translation, relationship inference, validation, and PBIP export.
+          </p>
+          <EnterpriseAnalysisPanel files={allFiles} onAnalysisComplete={() => {}} />
         </div>
       )}
     </div>
