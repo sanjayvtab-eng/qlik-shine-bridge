@@ -52,6 +52,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     if (!requirement || !ruleBookMd || !bothSelected) return;
     setLoading(true);
     setError(null);
+    setValidationReport(null);
     setStageStatus(3, "in-progress");
 
     try {

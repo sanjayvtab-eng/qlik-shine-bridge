@@ -163,7 +163,7 @@ function parseLoadBody(body: string): ParsedLoadBody {
     }
     return { fields: [], from: sql, sourceQuery: sql };
   }
-  const loadMatch = body.match(/LOAD\s+([\s\S]*?)(?:\s+(FROM|RESIDENT)\s+([\s\S]+))?$/i);
+  const loadMatch = body.match(/LOAD\s+([\s\S]*?)(?:\s+(FROM|RESIDENT|INLINE|AUTOGENERATE)\s+([\s\S]*))?$/i);
   if (!loadMatch) return { fields: [] };
   const fields = parseFieldList(loadMatch[1]);
   const kind = loadMatch[2]?.toUpperCase();
@@ -176,6 +176,9 @@ function parseLoadBody(body: string): ParsedLoadBody {
     const whereSplit = rest.split(/\bWHERE\b/i);
     const resName = whereSplit[0].trim().split(/\s+/)[0];
     return { fields, resident: resName, where: whereSplit[1]?.trim() };
+  }
+  if (kind === "INLINE" || kind === "AUTOGENERATE") {
+    return { fields, from: kind };
   }
   return { fields };
 }
