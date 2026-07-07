@@ -3,6 +3,8 @@ import { useMigration } from "@/lib/migration/store";
 import { analyzeQvsScriptsViaAi } from "@/lib/migration/gemini";
 import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
+import type { MigrationValidationReport } from "@/lib/migration/types";
+import { cn } from "@/lib/utils";
 import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
 import type { ExtractedFile } from "../MultiFileDropzone";
 import { EnterpriseAnalysisPanel } from "../EnterpriseAnalysisPanel";
@@ -17,6 +19,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
+  const [validationReport, setValidationReport] = useState<MigrationValidationReport | null>(null);
 
   const hasRequirement = !!requirement;
   const hasRuleBook    = !!ruleBookMd;
@@ -81,14 +84,10 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         validationReport: finalValidationReport
       });
 
-      if (finalValidationReport.blockingErrors) {
-        setError("AI generated an incomplete or invalid lineage schema. Please click on 'Power Query' (Stage 4) in the top pipeline navigation to view the detailed validation report, or try analyzing again.");
-        setStageStatus(3, "pending");
-        setComplete(false);
-      } else {
-        setStageStatus(3, "complete", 100);
-        setComplete(true);
-      }
+      setValidationReport(finalValidationReport);
+
+      setStageStatus(3, "complete", 100);
+      setComplete(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "QVS structural code lineage analysis failed.";
       setError(msg);
@@ -207,7 +206,32 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
-      {complete && (
+      {validationReport && validationReport.issues && validationReport.issues.length > 0 && (
+        <div className={cn("surface-card p-5 border rounded-xl", validationReport.blockingErrors ? "border-destructive/30 bg-destructive/5" : "border-warning/30 bg-warning/5")}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h4 className="font-display font-semibold text-base">Migration Validation Status</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">Lineage state profile checked against compiled rule criteria constraints.</p>
+            </div>
+            <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider", validationReport.blockingErrors ? "bg-destructive/10 text-destructive" : "bg-warning/10 text-warning")}>
+              {validationReport.blockingErrors ? "Blocked" : "Warnings Found"}
+            </span>
+          </div>
+          <div className={cn("mt-4 space-y-2 pt-4 border-t", validationReport.blockingErrors ? "border-destructive/20" : "border-warning/20")}>
+            {validationReport.issues.map((issue) => (
+              <div key={issue.id} className="flex items-start gap-2 text-sm">
+                <AlertCircle className={cn("h-4 w-4 shrink-0 mt-0.5", issue.severity === "error" ? "text-destructive" : "text-warning")} />
+                <div>
+                  <span className="font-semibold text-foreground">{issue.area}:</span> <span className="text-muted-foreground">{issue.message}</span>
+                  {issue.detail && <div className="text-xs text-muted-foreground/80 mt-0.5">{issue.detail}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {complete && !validationReport?.blockingErrors && (
         <div className="surface-card p-6 bg-success/5 border-success/20 flex flex-col items-center text-center space-y-3 rounded-2xl">
           <ShieldCheck className="h-10 w-10 text-success" />
           <div className="font-semibold text-lg text-foreground">Code Metadata Generation Complete</div>

@@ -452,26 +452,34 @@ async function analyzeStage3A(
   };
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
-  const response = await fetchWithRetry(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.0,
-        maxOutputTokens: 8192, 
-        responseMimeType: "application/json",
-        responseSchema: schema3A
-      }
-    })
-  });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetchWithRetry(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+            responseMimeType: "application/json",
+            responseSchema: schema3A
+          }
+        })
+      });
 
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Stage 3A Parsing Failure (${response.status}): ${errText}`);
+      if (!response.ok) {
+        throw new Error(`Gemini API Error (Stage 3A Structural Engine): ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
+    } catch (e) {
+      console.warn(`[Stage 3A] JSON syntax error from Gemini on attempt ${attempt}: ${(e as Error).message}. Retrying...`);
+      if (attempt === 3) throw e;
+      await new Promise(r => setTimeout(r, 1500));
+    }
   }
-  const result = await response.json();
-  return JSON.parse(sanitizeJsonString(result?.candidates?.[0]?.content?.parts?.[0]?.text || "{}"));
 }
 
 /**
