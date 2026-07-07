@@ -674,12 +674,6 @@ export async function generatePowerQueryViaAi(
     ### COMPLETE RULEBOOK REFERENCE (General Translation Rules):
     ${qlikToPbiCompleteRulebook}
 
-    ${columnTypeEdits && Object.keys(columnTypeEdits).length > 0 ? `
-    ### EXPLICIT DATA TYPE OVERRIDES:
-    The user has explicitly defined the data types for specific columns. You MUST apply these exact Power BI data types using Table.TransformColumnTypes. Do NOT infer data types for these columns; use the provided overrides.
-    ${Object.entries(columnTypeEdits).map(([key, type]) => `- ${key} -> ${type}`).join("\\n    ")}
-    ` : ""}
-
     ### CORE OBJECTIVES:
     1. Iterate over every final table defined in the Technical Metadata.
     2. Read the execution graph lineage nodes to understand transformations (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
