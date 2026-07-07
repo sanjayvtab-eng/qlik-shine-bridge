@@ -133,7 +133,8 @@ export async function analyzeQvsScriptsViaAi(
   requirement: Requirement,
   ruleBookMd: string,
   sourceQvsText: string,
-  etlQvsText: string
+  etlQvsText: string,
+  parserHints?: any
 ): Promise<{ businessMetadata: BusinessMetadata; technicalMetadata: TechnicalMetadata; executionMetrics: any }> {
   
   let stage3A: any;
@@ -143,7 +144,7 @@ export async function analyzeQvsScriptsViaAi(
   try {
     if (finalModelUsed === PRIMARY_MODEL) {
       console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
-      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL);
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL, parserHints);
       
       // Throttle delay to protect token allocation bucket space
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -152,7 +153,7 @@ export async function analyzeQvsScriptsViaAi(
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
     } else {
       console.log(`[Engine] Skipping ${PRIMARY_MODEL} due to session-level rate limit. Using ${FALLBACK_MODEL} directly.`);
-      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     }
@@ -162,7 +163,7 @@ export async function analyzeQvsScriptsViaAi(
       isProExhausted = true;
       finalModelUsed = FALLBACK_MODEL;
       
-      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL);
+      stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     } else {
@@ -276,7 +277,8 @@ async function analyzeStage3A(
   ruleBookMd: string,
   sourceQvsText: string,
   etlQvsText: string,
-  targetModel: string
+  targetModel: string,
+  parserHints?: any
 ): Promise<any> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key configuration error.");
@@ -289,6 +291,14 @@ async function analyzeStage3A(
     
     ### MIGRATION RULE BOOK GUIDELINES:
     ${ruleBookMd}
+
+    ${parserHints ? `
+    ### BASELINE STRUCTURAL HINTS:
+    The following structural baseline was extracted using a deterministic parser. You MUST use this as a strong foundation to guarantee you don't miss tables.
+    Source Tables Found: ${parserHints.srcTables.map((t:any) => t.name).join(", ")}
+    Final Tables Found: ${parserHints.etlRes.finalTables.map((t:any) => t.name).join(", ")}
+    Execution Graph Nodes: ${parserHints.etlRes.executionGraph.map((t:any) => t.id).join(", ")}
+    ` : ""}
 
     ### CORE OBJECTIVES:
     1. Count and return precise total telemetry metrics for LOAD, JOIN, RESIDENT, and APPLYMAP operations.

@@ -60,7 +60,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       const etlRes = parseEtlQvs(etlText, srcTables);
 
       // 2. Invoke structured semantic AI extraction
-      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText);
+      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText, { srcTables, etlRes });
       const technicalMetadata = aiResponse.technicalMetadata;
 
       // 4. Validate the merged metadata
