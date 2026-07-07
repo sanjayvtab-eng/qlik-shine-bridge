@@ -69,33 +69,38 @@ export function BulkMeasureTranslator() {
 
   const parseFile = (file: File): Promise<{ name: string; expression: string }[]> => {
     return new Promise((resolve, reject) => {
-      const isCsv = file.name.endsWith(".csv");
+      const isCsv = file.name.toLowerCase().endsWith(".csv");
       
-      const processJson = (json: any[]) => {
-        const extracted = json.map(row => {
-          // Attempt to find columns matching 'measure', 'name' and 'expression', 'qlik'
-          const keys = Object.keys(row);
-          const nameKey = keys.find(k => k.toLowerCase().includes("name") || k.toLowerCase().includes("measure"));
-          const exprKey = keys.find(k => k.toLowerCase().includes("expression") || k.toLowerCase().includes("qlik") || k.toLowerCase().includes("formula"));
-          
-          if (nameKey && exprKey) {
-            return { name: String(row[nameKey]), expression: String(row[exprKey]) };
+      const processMatrix = (matrix: any[][]) => {
+        const extracted = matrix.map(row => {
+          if (!Array.isArray(row)) return null;
+          // Filter out empty cells to find the first two meaningful columns
+          const cells = row.map(cell => String(cell || "").trim()).filter(Boolean);
+          if (cells.length >= 2) {
+            return { name: cells[0], expression: cells[1] };
           }
-          
-          // Fallback: just use the first two columns
-          if (keys.length >= 2) {
-            return { name: String(row[keys[0]]), expression: String(row[keys[1]]) };
+          if (cells.length === 1) {
+            return { name: "Unnamed Measure", expression: cells[0] };
           }
           return null;
         }).filter(Boolean) as { name: string; expression: string }[];
+        
+        // Optionally remove the first row if it looks like a header
+        if (extracted.length > 0) {
+          const h1 = extracted[0].name.toLowerCase();
+          const h2 = extracted[0].expression.toLowerCase();
+          if (h1.includes("name") || h1.includes("measure") || h2.includes("expression") || h2.includes("qlik") || h2.includes("formula")) {
+            extracted.shift();
+          }
+        }
         resolve(extracted);
       };
 
       if (isCsv) {
         Papa.parse(file, {
-          header: true,
+          header: false,
           skipEmptyLines: true,
-          complete: (results) => processJson(results.data),
+          complete: (results) => processMatrix(results.data as string[][]),
           error: (err) => reject(err)
         });
       } else {
@@ -105,8 +110,8 @@ export function BulkMeasureTranslator() {
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(firstSheet);
-            processJson(json);
+            const matrix = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
+            processMatrix(matrix);
           } catch (err) {
             reject(err);
           }
