@@ -17,6 +17,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const [selectedSources, setSelectedSources] = useState<ExtractedFile[]>([]);
   const [selectedEtls, setSelectedEtls] = useState<ExtractedFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
   const [validationReport, setValidationReport] = useState<MigrationValidationReport | null>(null);
@@ -64,7 +65,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       const etlRes = parseEtlQvs(etlText, srcTables);
 
       // 2. Invoke structured semantic AI extraction
-      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText, { srcTables, etlRes });
+      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText, { srcTables, etlRes }, setLoadingMsg);
       const technicalMetadata = aiResponse.technicalMetadata;
 
       // 4. Validate the merged metadata
@@ -95,6 +96,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       setStageStatus(3, "pending");
     } finally {
       setLoading(false);
+      setLoadingMsg(null);
     }
   };
 
@@ -196,7 +198,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all hover:opacity-90"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-          {loading ? "Extracting Code Models..." : "Analyze QVS Scripts"}
+          {loading ? (loadingMsg || "Extracting Code Models...") : "Analyze QVS Scripts"}
         </button>
       </div>
 

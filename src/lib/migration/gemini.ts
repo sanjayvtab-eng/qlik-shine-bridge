@@ -128,7 +128,8 @@ export async function analyzeQvsScriptsViaAi(
   ruleBookMd: string,
   sourceQvsText: string,
   etlQvsText: string,
-  parserHints?: any
+  parserHints?: any,
+  onProgress?: (msg: string) => void
 ): Promise<{ businessMetadata: BusinessMetadata; technicalMetadata: TechnicalMetadata; executionMetrics: any }> {
   
   let stage3A: any;
@@ -138,16 +139,20 @@ export async function analyzeQvsScriptsViaAi(
   try {
     if (finalModelUsed === PRIMARY_MODEL) {
       console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
+      if (onProgress) onProgress("Extracting structural blueprint (Stage 3A)...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL, parserHints);
       
       // Throttle delay to protect token allocation bucket space
+      if (onProgress) onProgress("Structuring relationships (Stage 3B)...");
       await new Promise((resolve) => setTimeout(resolve, 2000));
       
       console.log(`[Engine] Initializing semantic validation pass via ${PRIMARY_MODEL}...`);
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
     } else {
       console.log(`[Engine] Skipping ${PRIMARY_MODEL} due to session-level rate limit. Using ${FALLBACK_MODEL} directly.`);
+      if (onProgress) onProgress("Extracting structural blueprint via Fallback...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
+      if (onProgress) onProgress("Structuring relationships via Fallback...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     }
@@ -157,7 +162,9 @@ export async function analyzeQvsScriptsViaAi(
       isProExhausted = true;
       finalModelUsed = FALLBACK_MODEL;
       
+      if (onProgress) onProgress("Rate limit hit. Retrying structural extraction...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
+      if (onProgress) onProgress("Retrying relationship structuring...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     } else {
