@@ -19,6 +19,14 @@ export function BulkMeasureTranslator() {
   const onDrop = async (acceptedFiles: File[]) => {
     const f = acceptedFiles[0];
     if (!f) return;
+
+    // Manual extension check to bypass strict MIME issues on Windows
+    const ext = f.name.toLowerCase().split('.').pop();
+    if (!['csv', 'xlsx', 'xls'].includes(ext || '')) {
+      toast.error("Unsupported file type. Please upload a .csv, .xlsx, or .xls file.");
+      return;
+    }
+
     setFile(f);
     setParsing(true);
     setResults([]);
@@ -36,7 +44,7 @@ export function BulkMeasureTranslator() {
 
       const translated = await translateBulkMeasuresViaAi(data, ruleBookMd || "");
       setResults(translated);
-      toast.success(`Successfully translated \${translated.length} measures!`);
+      toast.success(`Successfully translated ${translated.length} measures!`);
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || "Failed to process file");
@@ -48,11 +56,6 @@ export function BulkMeasureTranslator() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'text/csv': ['.csv'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'application/vnd.ms-excel': ['.xls']
-    },
     maxFiles: 1
   });
 
