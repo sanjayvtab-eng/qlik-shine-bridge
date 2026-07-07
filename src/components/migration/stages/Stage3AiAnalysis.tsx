@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
 import type { ExtractedFile } from "../MultiFileDropzone";
 import { EnterpriseAnalysisPanel } from "../EnterpriseAnalysisPanel";
-import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen, Lock, ArrowRight, Key } from "lucide-react";
+import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen, Lock, ArrowRight } from "lucide-react";
 
 export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const { requirement, ruleBookMd, setSourceAnalysis, setEtlAnalysis, setMergedMetadata, setStageStatus } = useMigration();
@@ -20,7 +20,6 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
   const [validationReport, setValidationReport] = useState<MigrationValidationReport | null>(null);
-  const [apiKeyOverride, setApiKeyOverride] = useState(localStorage.getItem("GEMINI_API_KEY") || "");
 
   const hasRequirement = !!requirement;
   const hasRuleBook    = !!ruleBookMd;
@@ -190,29 +189,14 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
               : "Complete all prerequisites above to enable analysis."}
           </p>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative hidden sm:block">
-            <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input 
-              type="password" 
-              placeholder="Gemini API Key..." 
-              value={apiKeyOverride}
-              onChange={(e) => {
-                setApiKeyOverride(e.target.value);
-                localStorage.setItem("GEMINI_API_KEY", e.target.value);
-              }}
-              className="pl-9 pr-4 py-2 bg-background border border-input rounded-xl text-sm w-48 md:w-64 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted-foreground/70"
-            />
-          </div>
-          <button
-            onClick={handleRunScriptAnalysis}
-            disabled={loading || !canAnalyze}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all hover:opacity-90 whitespace-nowrap flex-1 justify-center md:flex-none"
-          >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
-            {loading ? "Extracting..." : "Analyze QVS"}
-          </button>
-        </div>
+        <button
+          onClick={handleRunScriptAnalysis}
+          disabled={loading || !canAnalyze}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-all hover:opacity-90"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
+          {loading ? "Extracting Code Models..." : "Analyze QVS Scripts"}
+        </button>
       </div>
 
       {error && (
