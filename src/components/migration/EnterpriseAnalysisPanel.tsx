@@ -492,7 +492,6 @@ function TabMQueryDataTypes({
 }) {
   const { businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText } = useMigration();
   const [generatingAi, setGeneratingAi] = useState(false);
-  const [generatingMsg, setGeneratingMsg] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiQueries, setAiQueries] = useState<Record<string, string> | null>(null);
 
@@ -504,15 +503,7 @@ function TabMQueryDataTypes({
     setGeneratingAi(true);
     setAiError(null);
     try {
-      // Pass the edits to the AI so it strictly uses them in the M query
-      const aiOutput = await generatePowerQueryViaAi(
-        businessMetadata, 
-        technicalMetadata, 
-        ruleBookMd, 
-        sourceQvsText, 
-        etlQvsText, undefined, setGeneratingMsg
-      );
-      
+      const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText);
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
         if (q.table && q.code) {
@@ -520,25 +511,11 @@ function TabMQueryDataTypes({
         }
       });
       setAiQueries(newMQueries);
-      
-      // Safely apply types locally without triggering a full engine re-run
-      const updatedTypes = { ...analysis.columnTypes };
-      Object.entries(columnTypeEdits).forEach(([key, val]) => {
-        const [t, c] = key.split(".");
-        if (!updatedTypes[t]) updatedTypes[t] = {};
-        updatedTypes[t][c] = val;
-      });
-      
-      onAnalysisUpdate({ 
-        ...analysis, 
-        columnTypes: updatedTypes,
-        mQueries: { ...analysis.mQueries, ...newMQueries } 
-      });
+      onAnalysisUpdate({ ...analysis, mQueries: { ...analysis.mQueries, ...newMQueries } });
     } catch (e) {
       setAiError("Failed to generate M Query: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setGeneratingAi(false);
-      setGeneratingMsg(null);
     }
   };
 
@@ -546,6 +523,7 @@ function TabMQueryDataTypes({
   const [activeTable, setActiveTable] = useState(0);
   const tables = Object.keys(mq).sort();
   const [tableFilter, setTableFilter] = useState("All");
+  const diag = analysis.mQueryDiagnostics || [];
 
   const downloadAll = () => {
     const txt = combinedMQueriesText(mq);
@@ -569,7 +547,7 @@ function TabMQueryDataTypes({
             {!aiQueries && (
               <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all">
                 {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {generatingAi ? (generatingMsg || "Compiling...") : "Generate M Query"}
+                {generatingAi ? "Compiling..." : "Generate M Query"}
               </button>
             )}
             {aiQueries && (
@@ -609,18 +587,28 @@ function TabMQueryDataTypes({
         )}
       </div>
 
-      <div className="surface-card p-4 border border-border">
-        <SectionHeader title="Data Type Designer" sub="Select explicit data types for columns. These are injected into the safe M type-conversion step." />
+      <div className="surface-card p-4">
+        <SectionHeader title="M Query Static Diagnostics" sub="Pre-flight checks before Power BI Desktop open" />
+        <DataTable rows={diag} />
+      </div>
+
+      <div className="surface-card p-4">
+        <SectionHeader title="Data Type Designer" sub="Selections written into safe M type-conversion step and model.bim" />
         <div className="flex items-center gap-3 mb-3">
           <select value={tableFilter} onChange={e => setTableFilter(e.target.value)}
             className="px-3 py-1.5 rounded-lg border border-border bg-surface text-xs text-foreground">
             <option>All</option>
             {Object.keys(analysis.columnTypes).map(t => <option key={t}>{t}</option>)}
           </select>
+          <button onClick={onApplyTypes} disabled={applyingTypes}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
+            {applyingTypes ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Apply Types & Regenerate M
+          </button>
         </div>
-        <div className="overflow-auto rounded-xl border border-border max-h-96">
+        <div className="overflow-auto rounded-xl border border-border">
           <table className="w-full text-xs">
-            <thead className="bg-surface-elevated border-b border-border sticky top-0 z-10">
+            <thead className="bg-surface-elevated border-b border-border">
               <tr>
                 {["Table","Column","Power BI Data Type","Confidence","Inference Source"].map(h =>
                   <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>

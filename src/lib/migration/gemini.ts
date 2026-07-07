@@ -128,8 +128,7 @@ export async function analyzeQvsScriptsViaAi(
   ruleBookMd: string,
   sourceQvsText: string,
   etlQvsText: string,
-  parserHints?: any,
-  onProgress?: (msg: string) => void
+  parserHints?: any
 ): Promise<{ businessMetadata: BusinessMetadata; technicalMetadata: TechnicalMetadata; executionMetrics: any }> {
   
   let stage3A: any;
@@ -139,20 +138,16 @@ export async function analyzeQvsScriptsViaAi(
   try {
     if (finalModelUsed === PRIMARY_MODEL) {
       console.log(`[Engine] Initializing structural analysis pass via ${PRIMARY_MODEL}...`);
-      if (onProgress) onProgress("Extracting structural blueprint (Stage 3A)...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, PRIMARY_MODEL, parserHints);
       
       // Throttle delay to protect token allocation bucket space
-      if (onProgress) onProgress("Structuring relationships (Stage 3B)...");
       await new Promise((resolve) => setTimeout(resolve, 2000));
       
       console.log(`[Engine] Initializing semantic validation pass via ${PRIMARY_MODEL}...`);
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, PRIMARY_MODEL);
     } else {
       console.log(`[Engine] Skipping ${PRIMARY_MODEL} due to session-level rate limit. Using ${FALLBACK_MODEL} directly.`);
-      if (onProgress) onProgress("Extracting structural blueprint via Fallback...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
-      if (onProgress) onProgress("Structuring relationships via Fallback...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     }
@@ -162,9 +157,7 @@ export async function analyzeQvsScriptsViaAi(
       isProExhausted = true;
       finalModelUsed = FALLBACK_MODEL;
       
-      if (onProgress) onProgress("Rate limit hit. Retrying structural extraction...");
       stage3A = await analyzeStage3A(requirement, ruleBookMd, sourceQvsText, etlQvsText, FALLBACK_MODEL, parserHints);
-      if (onProgress) onProgress("Retrying relationship structuring...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
       stage3B = await analyzeStage3B(requirement, ruleBookMd, sourceQvsText, etlQvsText, stage3A, FALLBACK_MODEL);
     } else {
@@ -642,26 +635,12 @@ export async function generatePowerQueryViaAi(
   technicalMetadata: TechnicalMetadata,
   ruleBookMd: string,
   sourceQvsText?: string,
-  etlQvsText?: string,
-  columnTypeEdits?: Record<string, string>,
-  onProgress?: (msg: string) => void
+  etlQvsText?: string
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
 
-  const finalTables = technicalMetadata.finalTables || [];
-  if (finalTables.length === 0) return [];
-
-  const results: { table: string; code: string }[] = [];
-  const CHUNK_SIZE = 2; // Process in chunks of 2 tables to prevent 503 Deadline Exceeded
-  let pqEngineModel = getActiveModel(PRIMARY_MODEL);
-
-  for (let i = 0; i < finalTables.length; i += CHUNK_SIZE) {
-    const chunk = finalTables.slice(i, i + CHUNK_SIZE);
-    const chunkMetadata = { ...technicalMetadata, finalTables: chunk };
-    if (onProgress) onProgress(`Compiling M Query for chunk ${Math.floor(i / CHUNK_SIZE) + 1} of ${Math.ceil(finalTables.length / CHUNK_SIZE)}...`);
-
-    const prompt = `
+  const prompt = `
     You are an elite, strictly rule-driven Power BI Power Query M-Code Compiler.
     Your ONLY source of truth is the Migration Rule Book and the knowledge files provided below. Generate production-ready Power Query M code strictly from the raw QVS scripts.
 
@@ -758,7 +737,7 @@ export async function generatePowerQueryViaAi(
 
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
-    - Technical Schema Blueprint: ${JSON.stringify(chunkMetadata)}
+    - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
     - Raw Source QVS Script:
     \`\`\`qlik
     ${sourceQvsText || "No source script provided."}
@@ -775,49 +754,30 @@ export async function generatePowerQueryViaAi(
     ]
   `;
 
-    let chunkSuccess = false;
-    let retries = 0;
-    while (!chunkSuccess && retries < 3) {
-      try {
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
-        const response = await fetchWithRetry(apiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-          })
-        });
+  let pqEngineModel = getActiveModel(PRIMARY_MODEL);
 
-        if (!response.ok) {
-          throw new Error(`Gemini API Error: ${response.statusText}`);
-        }
+  try {
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${pqEngineModel}:generateContent?key=${apiKey}`;
+    const response = await fetchWithRetry(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+      })
+    });
 
-        const data = await response.json();
-        const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-        
-        try {
-          const chunkResults = JSON.parse(sanitizeJsonString(resultText));
-          if (Array.isArray(chunkResults)) {
-            results.push(...chunkResults);
-          }
-          chunkSuccess = true;
-        } catch (parseError) {
-          console.warn(`[Power Query AI] JSON Parse failed for chunk ${i}. Retrying (${retries + 1}/3)...`, parseError);
-          throw parseError; // Caught by the outer catch to trigger retry
-        }
-      } catch (error) {
-        retries++;
-        if (retries >= 3) {
-          console.error(`[Power Query AI] ${pqEngineModel} failed after 3 retries for chunk.`);
-          throw error;
-        }
-        await new Promise(r => setTimeout(r, 2000)); // wait before retry
-      }
+    if (!response.ok) {
+      throw new Error(`Gemini API Error: ${response.statusText}`);
     }
-  }
 
-  return results;
+    const data = await response.json();
+    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    return JSON.parse(sanitizeJsonString(resultText));
+  } catch (error) {
+    console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
+    throw error;
+  }
 }
 
 export async function generateDaxMeasuresWithGemini(
