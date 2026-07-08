@@ -426,10 +426,7 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
 
         {/* Middle panel — M query + types */}
         <div className="space-y-4 lg:col-span-1">
-          <div className="surface-card p-4">
-            <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">Generated Power Query M</h5>
-            <CodeBlock code={mQuery} />
-          </div>
+
           <div className="surface-card p-4">
             <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">Column Types</h5>
             <DataTable rows={p.fields.map(f => ({ Column: f, "Power BI Type": typeCols[f] || "Text" }))} />
