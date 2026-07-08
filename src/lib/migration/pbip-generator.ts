@@ -63,12 +63,7 @@ export async function generatePbipZip(
 
   // SM definition.pbism
   const pbism = {
-    version: "1.0",
-    dataset: {
-      model: {
-        path: "model.bim"
-      }
-    }
+    version: "1.0"
   };
   smFolder.file("definition.pbism", JSON.stringify(pbism, null, 2));
 
