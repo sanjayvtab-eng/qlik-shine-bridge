@@ -13,8 +13,8 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
     "version": "1.0",
     "artifacts": [
       {
-        "report": {
-          "path": `${projectName}.Report`
+        "dataset": {
+          "path": `${projectName}.Dataset`
         }
       }
     ],
@@ -121,36 +121,6 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
     }
   };
   datasetFolder?.file("definition.pbism", JSON.stringify(pbism, null, 2));
-
-  // --- Report Folder ---
-  const reportFolder = zip.folder(`${projectName}.Report`);
-
-  // item.metadata.json
-  const reportMetadata = {
-    "type": "report",
-    "displayName": `${projectName}`,
-    "description": "Migrated from Qlik using Qlik-Shine Bridge"
-  };
-  reportFolder?.file("item.metadata.json", JSON.stringify(reportMetadata, null, 2));
-
-  // item.config.json
-  const reportConfig = {
-    "version": "1.0",
-    "logicalId": "00000000-0000-0000-0000-000000000000"
-  };
-  reportFolder?.file("item.config.json", JSON.stringify(reportConfig, null, 2));
-
-  // definition.pbir
-  const pbir = {
-    "version": "1.0",
-    "datasetReference": {
-      "byPath": {
-        "path": `../${projectName}.Dataset`
-      },
-      "byConnection": null
-    }
-  };
-  reportFolder?.file("definition.pbir", JSON.stringify(pbir, null, 2));
 
   // Generate the zip blob
   return await zip.generateAsync({ type: "blob" });
