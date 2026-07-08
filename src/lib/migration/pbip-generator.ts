@@ -111,6 +111,17 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
   };
   datasetFolder?.file("model.bim", JSON.stringify(modelBim, null, 2));
 
+  // definition.pbism
+  const pbism = {
+    "version": "1.0",
+    "dataset": {
+      "model": {
+        "path": "model.bim"
+      }
+    }
+  };
+  datasetFolder?.file("definition.pbism", JSON.stringify(pbism, null, 2));
+
   // --- Report Folder ---
   const reportFolder = zip.folder(`${projectName}.Report`);
 
