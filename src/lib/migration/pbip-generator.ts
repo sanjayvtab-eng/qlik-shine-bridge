@@ -13,8 +13,8 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
     "version": "1.0",
     "artifacts": [
       {
-        "report": {
-          "path": `${projectName}.Report`
+        "semanticModel": {
+          "path": `${projectName}.SemanticModel`
         }
       }
     ],
@@ -24,23 +24,23 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
   };
   zip.file(`${projectName}.pbip`, JSON.stringify(pbipContent, null, 2));
 
-  // --- Dataset Folder ---
-  const datasetFolder = zip.folder(`${projectName}.Dataset`);
+  // --- Semantic Model Folder ---
+  const smFolder = zip.folder(`${projectName}.SemanticModel`);
   
   // item.metadata.json
-  const datasetMetadata = {
-    "type": "dataset",
+  const smMetadata = {
+    "type": "semanticModel",
     "displayName": `${projectName}`,
     "description": "Migrated from Qlik using Qlik-Shine Bridge"
   };
-  datasetFolder?.file("item.metadata.json", JSON.stringify(datasetMetadata, null, 2));
+  smFolder?.file("item.metadata.json", JSON.stringify(smMetadata, null, 2));
 
   // item.config.json
-  const datasetConfig = {
+  const smConfig = {
     "version": "1.0",
     "logicalId": "00000000-0000-0000-0000-000000000000"
   };
-  datasetFolder?.file("item.config.json", JSON.stringify(datasetConfig, null, 2));
+  smFolder?.file("item.config.json", JSON.stringify(smConfig, null, 2));
 
   // model.bim (TMSL Format)
   const tables = analysis.semanticModel.tables.map((t: any) => {
@@ -109,7 +109,7 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
       "relationships": relationships
     }
   };
-  datasetFolder?.file("model.bim", JSON.stringify(modelBim, null, 2));
+  smFolder?.file("model.bim", JSON.stringify(modelBim, null, 2));
 
   // definition.pbism
   const pbism = {
@@ -120,54 +120,7 @@ export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName:
       }
     }
   };
-  datasetFolder?.file("definition.pbism", JSON.stringify(pbism, null, 2));
-
-  // --- Report Folder ---
-  const reportFolder = zip.folder(`${projectName}.Report`);
-
-  // item.metadata.json
-  const reportMetadata = {
-    "type": "report",
-    "displayName": `${projectName}`,
-    "description": "Migrated from Qlik using Qlik-Shine Bridge"
-  };
-  reportFolder?.file("item.metadata.json", JSON.stringify(reportMetadata, null, 2));
-
-  // item.config.json
-  const reportConfig = {
-    "version": "1.0",
-    "logicalId": "00000000-0000-0000-0000-000000000000"
-  };
-  reportFolder?.file("item.config.json", JSON.stringify(reportConfig, null, 2));
-
-  // definition.pbir
-  const pbir = {
-    "version": "1.0",
-    "datasetReference": {
-      "byPath": {
-        "path": `../${projectName}.Dataset`
-      },
-      "byConnection": null
-    }
-  };
-  reportFolder?.file("definition.pbir", JSON.stringify(pbir, null, 2));
-
-  // Minimal report.json to satisfy Power BI Desktop schema validation
-  const reportJson = {
-    "config": "{\"version\":\"5.55\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY24SU02\",\"version\":\"5.55\",\"type\":\"SharedResources\"}},\"activeSectionIndex\":0,\"defaultDragAndDropAreaVisibility\":true}",
-    "layoutOptimization": 0,
-    "resourcePackages": [],
-    "sections": [
-      {
-        "name": "ReportSection",
-        "displayName": "Page 1",
-        "filters": "[]",
-        "visualContainers": [],
-        "config": "{}"
-      }
-    ]
-  };
-  reportFolder?.file("report.json", JSON.stringify(reportJson, null, 2));
+  smFolder?.file("definition.pbism", JSON.stringify(pbism, null, 2));
 
   // Generate the zip blob
   return await zip.generateAsync({ type: "blob" });
