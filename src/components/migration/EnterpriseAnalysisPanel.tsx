@@ -381,7 +381,7 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Left panel — details */}
         <div className="space-y-4 lg:col-span-1">
           <div className="surface-card p-4">
@@ -424,17 +424,12 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
           )}
         </div>
 
-        {/* Middle panel — M query + types */}
+        {/* Right panel — types + DAX + validation */}
         <div className="space-y-4 lg:col-span-1">
-
           <div className="surface-card p-4">
             <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">Column Types</h5>
             <DataTable rows={p.fields.map(f => ({ Column: f, "Power BI Type": typeCols[f] || "Text" }))} />
           </div>
-        </div>
-
-        {/* Right panel — DAX + validation */}
-        <div className="space-y-4 lg:col-span-1">
           <div className="surface-card p-4">
             <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">DAX Measures</h5>
             {measures.length ? measures.map(m => (
