@@ -496,7 +496,7 @@ function TabMQueryDataTypes({
     setGeneratingAi(true);
     setAiError(null);
     try {
-      const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText);
+      const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText, analysis.sourceMappings);
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
         if (q.table && q.code) {

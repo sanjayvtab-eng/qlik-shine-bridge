@@ -635,7 +635,8 @@ export async function generatePowerQueryViaAi(
   technicalMetadata: TechnicalMetadata,
   ruleBookMd: string,
   sourceQvsText?: string,
-  etlQvsText?: string
+  etlQvsText?: string,
+  sourceMappings?: { originalRef: string; mappedRef: string; connectorType: string }[]
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -687,18 +688,17 @@ export async function generatePowerQueryViaAi(
       \`\`\`
       For Excel: navigate via \`{[Item="SheetName", Kind="Sheet"]}[Data]\`.
 
-    **[2b] CONSISTENT vSourcePath PARAMETER FOR ALL FILE-BASED SOURCES**
-    - ALL file-based loads (CSV, Excel, QVD) MUST use the M parameter vSourcePath for portability. NEVER hardcode absolute paths like "D:\\SourceFiles\\" or "C:\\Users\\...".
-    - At the top of EVERY generated M script that uses files, declare: vSourcePath = "TODO: Set your base source folder path here" as text
-    - Then reference it consistently: File.Contents(vSourcePath & "filename.csv")
-    - This applies uniformly to ALL file sources in the migration — no exceptions.
+    **[2b] SOURCE PATHS AND MAPPINGS**
+    - If the user provided Source Mappings (see Input Context below), you MUST use the exact absolute 'mappedRef' path provided in the mapping instead of creating a generic path.
+    - Example: File.Contents("C:\\Users\\91733\\Downloads\\Staging\\Sales2025.csv")
+    - ONLY if a file is NOT in the Source Mappings, you should declare \`vSourcePath = "TODO: Set your base source folder path here"\` and use \`File.Contents(vSourcePath & "filename")\`.
 
     **[2c] CSV HEADER PROMOTION (CRITICAL)**
     - When using \`Csv.Document\`, the first row is NOT automatically promoted to headers. The columns are named Column1, Column2, etc.
     - You MUST add a \`Table.PromoteHeaders\` step immediately after \`Csv.Document\` BEFORE you attempt to reference any columns by name (e.g., in Table.TransformColumnTypes or Table.SelectColumns).
     - Example:
       \`\`\`
-      Source_Sales = Csv.Document(File.Contents(vSourcePath & "Sales.csv"), [Delimiter=",", Encoding=65001]),
+      Source_Sales = Csv.Document(File.Contents("C:\\Path\\To\\Sales.csv"), [Delimiter=",", Encoding=65001]),
       Promoted_Sales = Table.PromoteHeaders(Source_Sales, [PromoteAllScalars=true]),
       Typed_Sales = Table.TransformColumnTypes(Promoted_Sales, {{"SalesID", type text}})
       \`\`\`
@@ -744,6 +744,7 @@ export async function generatePowerQueryViaAi(
     ### Input Context:
     - Business Requirements: ${JSON.stringify(businessMetadata)}
     - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
+    - Source Mappings (USE THESE PATHS IN YOUR QUERIES): ${JSON.stringify(sourceMappings || [])}
     - Raw Source QVS Script:
     \`\`\`qlik
     ${sourceQvsText || "No source script provided."}
