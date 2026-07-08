@@ -19,6 +19,7 @@ import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
 import { generatePbixFile } from "@/lib/migration/pbit-generator";
+import { generatePbipZip } from "@/lib/migration/pbip-generator";
 import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
 // ────────────────────────────────────────────────────────────────
@@ -551,6 +552,18 @@ function TabMQueryDataTypes({
     }
   };
 
+  const handleDownloadPbipZip = async () => {
+    try {
+      const blob = await generatePbipZip(analysis, "QLIK2PBI_M_Queries");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "QLIK2PBI_M_Queries_Workspace.zip";
+      a.click();
+    } catch (e) {
+      alert("Failed to generate PBIP zip: " + (e as Error).message);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="surface-card p-6 border border-border">
@@ -579,6 +592,9 @@ function TabMQueryDataTypes({
                 </button>
                 <button onClick={handleDownloadPbix} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F2C811]/10 border border-[#F2C811]/40 text-[#d4a800] dark:text-[#F2C811] text-xs font-semibold hover:bg-[#F2C811]/20 transition-colors">
                   <Package className="h-3.5 w-3.5" /> Open in Power BI (.pbix)
+                </button>
+                <button onClick={handleDownloadPbipZip} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/40 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
+                  <Package className="h-3.5 w-3.5" /> Download PBIP (.zip)
                 </button>
               </>
             )}
@@ -741,7 +757,7 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
   const [name, setName] = useState("QLIK2PBI_Migration_Project");
   const [exporting, setExporting] = useState(false);
 
-  const handleDownloadPbip = async () => {
+  const handleDownloadPbix = async () => {
     try {
       setExporting(true);
       const blob = await generatePbixFile(analysis, name);
@@ -751,6 +767,21 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
       a.click();
     } catch (e) {
       alert("Failed to generate .pbix file: " + (e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadPbipZip = async () => {
+    try {
+      setExporting(true);
+      const blob = await generatePbipZip(analysis, name);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}_Workspace.zip`;
+      a.click();
+    } catch (e) {
+      alert("Failed to generate PBIP zip: " + (e as Error).message);
     } finally {
       setExporting(false);
     }
@@ -801,12 +832,21 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
       <div className="surface-card p-4 space-y-3">
         <SectionHeader title="Downloads" sub="Export your migration artifacts" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button onClick={handleDownloadPbip} disabled={exporting}
+          <button onClick={handleDownloadPbix} disabled={exporting}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[#F2C811]/40 bg-[#F2C811]/10 text-sm font-medium hover:bg-[#F2C811]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             <Package className="h-5 w-5 text-[#d4a800] dark:text-[#F2C811]" />
             <div className="text-left">
               <div className="font-semibold text-[#d4a800] dark:text-[#F2C811]">{exporting ? "Generating..." : "Open in Power BI (.pbix)"}</div>
               <div className="text-xs text-[#d4a800]/70 dark:text-[#F2C811]/70">Double-click to load M queries + DAX instantly</div>
+            </div>
+          </button>
+          
+          <button onClick={handleDownloadPbipZip} disabled={exporting}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <Package className="h-5 w-5 text-primary" />
+            <div className="text-left">
+              <div className="font-semibold text-primary">{exporting ? "Generating..." : "Download PBIP (.zip)"}</div>
+              <div className="text-xs text-primary/70">Extract and open the .pbip file</div>
             </div>
           </button>
           <button onClick={handleDownloadMQueries}
@@ -821,7 +861,7 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
           </button>
         </div>
         <p className="text-xs text-muted-foreground bg-surface-elevated/50 p-3 rounded-lg">
-          💡 <strong>To use in Power BI Desktop:</strong> Click <strong>"Open in Power BI (.pbix)"</strong> to download the file directly. We are now using an uncompressed format (STORE) to bypass the browser ZIP parsing bugs so it opens natively.
+          💡 <strong>To use in Power BI Desktop:</strong> You can download the <strong>.pbix</strong> directly, OR download the <strong>PBIP (.zip)</strong>, extract it to a folder on your computer, and double-click the <code>.pbip</code> file inside it to open without any zip corruption issues.
         </p>
       </div>
     </div>

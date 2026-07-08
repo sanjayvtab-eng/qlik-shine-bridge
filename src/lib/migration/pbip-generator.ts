@@ -1,127 +1,200 @@
 import JSZip from "jszip";
 import { EnterpriseAnalysis } from "./enterprise-parser";
 
+/** Generate a random UUIDv4 */
+function uuidv4() {
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c: any) =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  );
+}
+
 /**
- * Generates a full PBIP project structure as a .zip file blob.
- * This can be directly loaded into Power BI Desktop.
+ * Generates a full PBIP (Power BI Project) structure as a .zip file.
+ * Following strict rules to prevent Power BI Desktop corruption:
+ * 1. Root folder does not end in .pbip
+ * 2. .platform files with unique UUIDv4
+ * 3. Legacy PBIR (Version 1.0) with report.json
+ * 4. M query expression split into string arrays
+ * 5. compatibilityLevel 1565
  */
-export async function generatePbipZip(analysis: EnterpriseAnalysis, projectName: string = "QLIK2PBI_Migration_Project"): Promise<Blob> {
+export async function generatePbipZip(
+  analysis: EnterpriseAnalysis,
+  projectName: string = "QLIK2PBI_Migration"
+): Promise<Blob> {
   const zip = new JSZip();
 
-  // Root .pbip file
+  // Root folder must NOT end in .pbip
+  const root = zip.folder(projectName);
+  if (!root) throw new Error("Failed to create root folder in ZIP");
+
+  // ── 1. Root Connection File: MyProject.pbip ──
   const pbipContent = {
-    "version": "1.0",
-    "artifacts": [
+    version: "1.0",
+    artifacts: [
       {
-        "semanticModel": {
-          "path": `${projectName}.SemanticModel`
+        report: {
+          path: `${projectName}.Report`
         }
       }
     ],
-    "settings": {
-      "enableAutoRecovery": true
+    settings: {
+      enableAutoRecovery: true
     }
   };
-  zip.file(`${projectName}.pbip`, JSON.stringify(pbipContent, null, 2));
+  root.file(`${projectName}.pbip`, JSON.stringify(pbipContent, null, 2));
 
-  // --- Semantic Model Folder ---
-  const smFolder = zip.folder(`${projectName}.SemanticModel`);
-  
-  // item.metadata.json
-  const smMetadata = {
-    "type": "semanticModel",
-    "displayName": `${projectName}`,
-    "description": "Migrated from Qlik using Qlik-Shine Bridge"
+  // ── 2. Semantic Model Folder ──
+  const smFolder = root.folder(`${projectName}.SemanticModel`);
+  if (!smFolder) throw new Error("Failed to create SM folder");
+
+  // SM .platform
+  const smPlatform = {
+    "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+    metadata: {
+      type: "SemanticModel",
+      displayName: projectName
+    },
+    config: {
+      version: "2.0",
+      logicalId: uuidv4()
+    }
   };
-  smFolder?.file("item.metadata.json", JSON.stringify(smMetadata, null, 2));
+  smFolder.file(".platform", JSON.stringify(smPlatform, null, 2));
 
-  // item.config.json
-  const smConfig = {
-    "version": "1.0",
-    "logicalId": "00000000-0000-0000-0000-000000000000"
+  // SM definition.pbism
+  const pbism = {
+    version: "1.0",
+    dataset: {
+      model: {
+        path: "model.bim"
+      }
+    }
   };
-  smFolder?.file("item.config.json", JSON.stringify(smConfig, null, 2));
+  smFolder.file("definition.pbism", JSON.stringify(pbism, null, 2));
 
-  // model.bim (TMSL Format)
-  const tables = analysis.semanticModel.tables.map((t: any) => {
-    // Determine the partition expression from generated M queries
-    const mQuery = analysis.mQueries[t.name] || 'let\n    Source = "M Query missing for this table"\nin\n    Source';
-    
-    // Convert columns to TMSL format
-    const columns = t.columns.map((c: any) => {
-      const colDef: any = {
+  // SM model.bim (TMSL)
+  const mQueriesMap: Record<string, string> = analysis.mQueries || {};
+  const tables = (analysis.semanticModel?.tables || []).map((t: any) => {
+    const mQuery = mQueriesMap[t.name] || `let\n    Source = "No query"\nin\n    Source`;
+    const columns = (t.columns || []).map((c: any) => {
+      const col: any = {
         name: c.name,
-        dataType: c.data_type || "string",
+        dataType: mapDataType(c.data_type || c.dataType || "string"),
         sourceColumn: c.name
       };
-      if (c.formatString) {
-        colDef.formatString = c.formatString;
-      }
-      return colDef;
+      if (c.formatString) col.formatString = c.formatString;
+      return col;
     });
-
-    // Convert measures
-    const measures = t.measures?.map((m: any) => ({
+    const measures = (t.measures || []).map((m: any) => ({
       name: m.name,
-      expression: [m.expression]
-    })) || [];
-
-    return {
+      expression: m.expression ? [m.expression] : [""], // TMSL requires array of strings or single string, let's use array
+      ...(m.formatString ? { formatString: m.formatString } : {})
+    }));
+    const tableObj: any = {
       name: t.name,
-      columns: columns,
-      partitions: [
-        {
-          name: t.name,
-          mode: "import",
-          source: {
-            type: "m",
-            expression: mQuery.split('\n')
-          }
+      columns,
+      partitions: [{
+        name: `${t.name}-partition`,
+        mode: "import",
+        source: {
+          type: "m",
+          expression: mQuery.split("\n") // Split by newline! (Rule 3)
         }
-      ],
-      measures: measures
+      }]
     };
+    if (measures.length > 0) tableObj.measures = measures;
+    return tableObj;
   });
 
-  const relationships = analysis.semanticModel.relationships.map((r: any) => {
-    return {
-      name: `${r.fromTable}_${r.fromColumn}_${r.toTable}_${r.toColumn}`,
-      fromTable: r.fromTable,
-      fromColumn: r.fromColumn,
-      toTable: r.toTable,
-      toColumn: r.toColumn,
-      crossFilteringBehavior: r.direction === "Both" ? "bothDirections" : "oneDirection"
-    };
-  });
+  const relationships = (analysis.semanticModel?.relationships || []).map((r: any) => ({
+    name: `${r.fromTable}_${r.fromColumn}_to_${r.toTable}_${r.toColumn}`,
+    fromTable: r.fromTable,
+    fromColumn: r.fromColumn,
+    toTable: r.toTable,
+    toColumn: r.toColumn,
+    crossFilteringBehavior: r.direction === "Both" ? "bothDirections" : "oneDirection",
+    isActive: true
+  }));
 
   const modelBim = {
-    "name": "SemanticModel",
-    "compatibilityLevel": 1550,
-    "model": {
-      "culture": "en-US",
-      "dataAccessOptions": {
-        "legacyRedirects": true,
-        "returnErrorValuesAsNull": true
+    name: "SemanticModel",
+    compatibilityLevel: 1565, // Rule 5: 1565
+    model: {
+      culture: "en-US",
+      dataAccessOptions: {
+        legacyRedirects: true,
+        returnErrorValuesAsNull: true
       },
-      "defaultPowerBIDataSourceVersion": "powerBI_V3",
-      "sourceQueryCulture": "en-US",
-      "tables": tables,
-      "relationships": relationships
+      defaultPowerBIDataSourceVersion: "powerBI_V3",
+      sourceQueryCulture: "en-US",
+      tables,
+      relationships
     }
   };
-  smFolder?.file("model.bim", JSON.stringify(modelBim, null, 2));
+  smFolder.file("model.bim", JSON.stringify(modelBim, null, 2));
 
-  // definition.pbism
-  const pbism = {
-    "version": "1.0",
-    "dataset": {
-      "model": {
-        "path": "model.bim"
+
+  // ── 3. Report Folder ──
+  const reportFolder = root.folder(`${projectName}.Report`);
+  if (!reportFolder) throw new Error("Failed to create Report folder");
+
+  // Report .platform
+  const reportPlatform = {
+    "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+    metadata: {
+      type: "Report",
+      displayName: projectName
+    },
+    config: {
+      version: "2.0",
+      logicalId: uuidv4()
+    }
+  };
+  reportFolder.file(".platform", JSON.stringify(reportPlatform, null, 2));
+
+  // Report definition.pbir (Legacy Version 1.0)
+  const pbir = {
+    "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+    version: "1.0",
+    datasetReference: {
+      byPath: {
+        path: `../${projectName}.SemanticModel`
       }
     }
   };
-  smFolder?.file("definition.pbism", JSON.stringify(pbism, null, 2));
+  reportFolder.file("definition.pbir", JSON.stringify(pbir, null, 2));
 
-  // Generate the zip blob
+  // Report report.json
+  const reportJson = {
+    version: "5.0",
+    themeCollection: { baseTheme: { name: "CY24SU06", version: "6.0", type: 2 } },
+    activeSectionIndex: 0,
+    config: "{\"version\":\"5.0\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY24SU06\",\"version\":\"6.0\",\"type\":2}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"persistentFiltersEnabled\":true}}",
+    layoutOptimization: 0,
+    sections: [{
+      name: "ReportSection",
+      displayName: "Migration Review",
+      filters: "[]",
+      ordinal: 0,
+      visualContainers: [],
+      config: "{\"layouts\":[{\"id\":0,\"position\":{\"x\":0,\"y\":0,\"z\":0,\"width\":1280,\"height\":720,\"tabOrder\":0}}]}",
+      width: 1280,
+      height: 720
+    }]
+  };
+  reportFolder.file("report.json", JSON.stringify(reportJson, null, 2));
+
+  // Generate zip
   return await zip.generateAsync({ type: "blob" });
+}
+
+function mapDataType(raw: string): string {
+  const t = (raw || "").toLowerCase();
+  if (t.includes("int")) return "int64";
+  if (t.includes("decimal") || t.includes("float") || t.includes("double") || t.includes("numeric")) return "double";
+  if (t.includes("datetime") || (t.includes("date") && t.includes("time"))) return "dateTime";
+  if (t.includes("date")) return "dateTime";
+  if (t.includes("bool")) return "boolean";
+  if (t.includes("currency") || t.includes("money")) return "decimal";
+  return "string";
 }
