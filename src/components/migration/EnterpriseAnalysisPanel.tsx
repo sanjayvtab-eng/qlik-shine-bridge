@@ -18,7 +18,7 @@ import {
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
-import { generatePbitFile } from "@/lib/migration/pbit-generator";
+import { generatePbitScript } from "@/lib/migration/pbit-ps-generator";
 import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
 // ────────────────────────────────────────────────────────────────
@@ -541,13 +541,14 @@ function TabMQueryDataTypes({
 
   const handleDownloadPbit = async () => {
     try {
-      const blob = await generatePbitFile(analysis, "QLIK2PBI_M_Queries");
+      const scriptContent = generatePbitScript(analysis, "QLIK2PBI_M_Queries");
+      const blob = new Blob([scriptContent], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "QLIK2PBI_M_Queries.pbit";
+      a.download = "Generate_QLIK2PBI_M_Queries_PBIT.ps1";
       a.click();
     } catch (e) {
-      alert("Failed to generate .pbit file: " + (e as Error).message);
+      alert("Failed to generate .pbit script: " + (e as Error).message);
     }
   };
 
@@ -578,7 +579,7 @@ function TabMQueryDataTypes({
                   <Download className="h-3.5 w-3.5" /> Download (.txt)
                 </button>
                 <button onClick={handleDownloadPbit} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F2C811]/10 border border-[#F2C811]/40 text-[#d4a800] dark:text-[#F2C811] text-xs font-semibold hover:bg-[#F2C811]/20 transition-colors">
-                  <Package className="h-3.5 w-3.5" /> Open in Power BI (.pbit)
+                  <Package className="h-3.5 w-3.5" /> Generate PBIT Script (.ps1)
                 </button>
               </>
             )}
@@ -744,13 +745,14 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
   const handleDownloadPbip = async () => {
     try {
       setExporting(true);
-      const blob = await generatePbitFile(analysis, name);
+      const scriptContent = generatePbitScript(analysis, name);
+      const blob = new Blob([scriptContent], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${name}.pbit`;
+      a.download = `Generate_${name}_PBIT.ps1`;
       a.click();
     } catch (e) {
-      alert("Failed to generate .pbit file: " + (e as Error).message);
+      alert("Failed to generate .pbit script: " + (e as Error).message);
     } finally {
       setExporting(false);
     }
@@ -805,8 +807,8 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[#F2C811]/40 bg-[#F2C811]/10 text-sm font-medium hover:bg-[#F2C811]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             <Package className="h-5 w-5 text-[#d4a800] dark:text-[#F2C811]" />
             <div className="text-left">
-              <div className="font-semibold text-[#d4a800] dark:text-[#F2C811]">{exporting ? "Generating..." : "Open in Power BI (.pbit)"}</div>
-              <div className="text-xs text-[#d4a800]/70 dark:text-[#F2C811]/70">Double-click to load M queries + DAX instantly</div>
+              <div className="font-semibold text-[#d4a800] dark:text-[#F2C811]">{exporting ? "Generating..." : "Generate PBIT Script (.ps1)"}</div>
+              <div className="text-xs text-[#d4a800]/70 dark:text-[#F2C811]/70">Run the script to build a .pbit instantly</div>
             </div>
           </button>
           <button onClick={handleDownloadMQueries}
@@ -821,7 +823,7 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
           </button>
         </div>
         <p className="text-xs text-muted-foreground bg-surface-elevated/50 p-3 rounded-lg">
-          💡 <strong>To use in Power BI Desktop:</strong> Click <strong>"Open in Power BI (.pbit)"</strong> to download the template file. When you open the <code>.pbit</code> file, Power BI Desktop will instantly load the entire semantic model with all your M Queries and DAX Measures pre-loaded into the Query Editor.
+          💡 <strong>To use in Power BI Desktop:</strong> Click <strong>"Generate PBIT Script (.ps1)"</strong> to download a PowerShell script. Right click the downloaded script, choose "Run with PowerShell", and it will generate a fully valid <code>.pbit</code> file on your computer with all M Queries and DAX Measures pre-loaded.
         </p>
       </div>
     </div>
