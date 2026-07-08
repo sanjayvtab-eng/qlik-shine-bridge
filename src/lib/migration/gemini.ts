@@ -636,7 +636,8 @@ export async function generatePowerQueryViaAi(
   ruleBookMd: string,
   sourceQvsText?: string,
   etlQvsText?: string,
-  sourceMappings?: { originalRef: string; mappedRef: string; connectorType: string }[]
+  sourceMappings?: { originalRef: string; mappedRef: string; connectorType: string }[],
+  targetTables?: string[]
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -655,11 +656,11 @@ export async function generatePowerQueryViaAi(
     ${qlikToPbiCompleteRulebook}
 
     ### CORE OBJECTIVES:
-    1. Iterate over every final table defined in the Technical Metadata.
+    1. Iterate over every final table defined in the TARGET TABLES below (if provided). If TARGET TABLES is provided, ignore the tables in Technical Metadata and STRICTLY generate M Queries ONLY for the tables listed in TARGET TABLES.
     2. Read the execution graph lineage nodes to understand transformations (LOAD, JOIN, RESIDENT, APPLYMAP, RENAME, etc.).
     3. Analyze the RAW QVS scripts to extract granular ETL logic, field selections, filters, and inline calculations.
     4. Translate Qlik transformations to Power Query M strictly per the Rule Book.
-    5. CRITICAL: The "table" name in your JSON output MUST EXACTLY MATCH the name of the final table in the Technical Metadata (e.g., "FactSales_Final", NOT "FactSales" or "AddSalesBand").
+    5. CRITICAL: The "table" name in your JSON output MUST EXACTLY MATCH the exact name from TARGET TABLES (e.g., "PriceBands", "FactSales_Final"). Do NOT make up new table names.
 
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
@@ -742,6 +743,7 @@ export async function generatePowerQueryViaAi(
     - Add inline M-comments before every transformation step (e.g., // Lineage: FactSales -> ApplyMap(RegionMap)).
 
     ### Input Context:
+    - TARGET TABLES (GENERATE QUERIES ONLY FOR THESE): ${JSON.stringify(targetTables || "Use Technical Metadata")}
     - Business Requirements: ${JSON.stringify(businessMetadata)}
     - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
     - Source Mappings (USE THESE PATHS IN YOUR QUERIES): ${JSON.stringify(sourceMappings || [])}

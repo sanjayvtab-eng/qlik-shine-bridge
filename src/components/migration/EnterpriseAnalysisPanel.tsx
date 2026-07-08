@@ -500,7 +500,15 @@ function TabMQueryDataTypes({
     setGeneratingAi(true);
     setAiError(null);
     try {
-      const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText, analysis.sourceMappings);
+      const aiOutput = await generatePowerQueryViaAi(
+        businessMetadata, 
+        technicalMetadata, 
+        ruleBookMd, 
+        sourceQvsText, 
+        etlQvsText, 
+        analysis.sourceMappings,
+        analysis.finalTables.map(t => t.table)
+      );
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
         if (q.table && q.code) {
