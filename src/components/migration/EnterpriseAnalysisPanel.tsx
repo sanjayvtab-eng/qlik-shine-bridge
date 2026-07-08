@@ -197,6 +197,7 @@ function TabSourceMapping({
   applying: boolean;
 }) {
   const [bulkFolder, setBulkFolder] = useState("");
+  const [convertQvd, setConvertQvd] = useState(true);
   const editable = mappingRows.filter(m => !m.bypassQvd);
   const bypassed = mappingRows.filter(m => m.bypassQvd);
   const unresolved = editable.filter(m => m.status !== "Mapped").length;
@@ -216,8 +217,11 @@ function TabSourceMapping({
     const updated = mappingRows.map(r => {
       if (r.bypassQvd || r.status === "Bypassed") return r;
       const rawPath = r.originalRef.replace(/^\$\([^)]+\)/, "");
-      const basename = (rawPath.split("/").pop() || rawPath.split("\\").pop() || "").split("?")[0];
+      let basename = (rawPath.split("/").pop() || rawPath.split("\\").pop() || "").split("?")[0];
       if (!basename) return r;
+      if (convertQvd && basename.toLowerCase().endsWith(".qvd")) {
+        basename = basename.substring(0, basename.length - 4) + ".csv";
+      }
       const sep = bulkFolder.includes("\\") || /^[A-Za-z]:/.test(bulkFolder) ? "\\" : "/";
       const mapped = bulkFolder.replace(/[/\\]+$/, "") + sep + basename;
       const ct = connector(mapped);
