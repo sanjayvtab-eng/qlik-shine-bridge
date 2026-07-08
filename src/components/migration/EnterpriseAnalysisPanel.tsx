@@ -13,11 +13,12 @@ import { cn } from "@/lib/utils";
 import {
   Database, FileText, Table2, GitBranch, Layers, BarChart3,
   Network, ShieldCheck, Download, Braces, Loader2, AlertCircle,
-  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles
+  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles, Package
 } from "lucide-react";
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
+import { generatePbipZip } from "@/lib/migration/pbip-generator";
 import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
 // ────────────────────────────────────────────────────────────────
@@ -723,6 +724,22 @@ function TabValidation({ analysis }: { analysis: EnterpriseAnalysis }) {
 function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
   const ready = analysis.validation.isReadyForPbipExport;
   const [name, setName] = useState("QLIK2PBI_Migration_Project");
+  const [exporting, setExporting] = useState(false);
+
+  const handleDownloadPbip = async () => {
+    try {
+      setExporting(true);
+      const blob = await generatePbipZip(analysis, name);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${name}_PBIP.zip`;
+      a.click();
+    } catch (e) {
+      alert("Failed to generate PBIP zip: " + (e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleDownloadJson = () => {
     const payload = {
@@ -768,7 +785,15 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
 
       <div className="surface-card p-4 space-y-3">
         <SectionHeader title="Downloads" sub="Export your migration artifacts" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button onClick={handleDownloadPbip} disabled={!ready || exporting}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl border border-primary/30 bg-primary/10 text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <Package className="h-5 w-5 text-primary" />
+            <div className="text-left">
+              <div className="font-semibold text-primary">{exporting ? "Generating..." : "Download PBIP Project (.zip)"}</div>
+              <div className="text-xs text-primary/70">Ready to load in Power BI Desktop</div>
+            </div>
+          </button>
           <button onClick={handleDownloadMQueries}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-border text-sm font-medium hover:bg-surface-elevated">
             <FileText className="h-4 w-4 text-primary" />
@@ -781,9 +806,7 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
           </button>
         </div>
         <p className="text-xs text-muted-foreground bg-surface-elevated/50 p-3 rounded-lg">
-          💡 <strong>To use in Power BI Desktop:</strong> Create a blank query, open Advanced Editor, paste the M query for each table, and click Done. 
-          Use the semantic model JSON to manually recreate relationships and measures if needed.
-          Full PBIP file generation requires the Python backend (run locally via <code>streamlit run app.py</code>).
+          💡 <strong>To use in Power BI Desktop:</strong> Download the PBIP Project (.zip), extract the folder, and double click the <code>.pbip</code> file. Power BI Desktop will instantly load the entire semantic model containing all your M Queries, Data Types, and DAX Measures!
         </p>
       </div>
     </div>
