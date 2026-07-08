@@ -18,7 +18,7 @@ import {
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
-import { generatePbipZip } from "@/lib/migration/pbip-generator";
+import { generatePbitFile } from "@/lib/migration/pbit-generator";
 import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
 // ────────────────────────────────────────────────────────────────
@@ -539,6 +539,18 @@ function TabMQueryDataTypes({
     a.click();
   };
 
+  const handleDownloadPbit = async () => {
+    try {
+      const blob = await generatePbitFile(analysis, "QLIK2PBI_M_Queries");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "QLIK2PBI_M_Queries.pbit";
+      a.click();
+    } catch (e) {
+      alert("Failed to generate .pbit file: " + (e as Error).message);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="surface-card p-6 border border-border">
@@ -563,7 +575,10 @@ function TabMQueryDataTypes({
                   Regenerate
                 </button>
                 <button onClick={downloadAll} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated">
-                  <Download className="h-3.5 w-3.5" /> Download All (.txt)
+                  <Download className="h-3.5 w-3.5" /> Download (.txt)
+                </button>
+                <button onClick={handleDownloadPbit} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F2C811]/10 border border-[#F2C811]/40 text-[#d4a800] dark:text-[#F2C811] text-xs font-semibold hover:bg-[#F2C811]/20 transition-colors">
+                  <Package className="h-3.5 w-3.5" /> Open in Power BI (.pbit)
                 </button>
               </>
             )}
@@ -729,13 +744,13 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
   const handleDownloadPbip = async () => {
     try {
       setExporting(true);
-      const blob = await generatePbipZip(analysis, name);
+      const blob = await generatePbitFile(analysis, name);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${name}_PBIP.zip`;
+      a.download = `${name}.pbit`;
       a.click();
     } catch (e) {
-      alert("Failed to generate PBIP zip: " + (e as Error).message);
+      alert("Failed to generate .pbit file: " + (e as Error).message);
     } finally {
       setExporting(false);
     }
@@ -786,12 +801,12 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
       <div className="surface-card p-4 space-y-3">
         <SectionHeader title="Downloads" sub="Export your migration artifacts" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button onClick={handleDownloadPbip} disabled={!ready || exporting}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl border border-primary/30 bg-primary/10 text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            <Package className="h-5 w-5 text-primary" />
+          <button onClick={handleDownloadPbip} disabled={exporting}
+            className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[#F2C811]/40 bg-[#F2C811]/10 text-sm font-medium hover:bg-[#F2C811]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <Package className="h-5 w-5 text-[#d4a800] dark:text-[#F2C811]" />
             <div className="text-left">
-              <div className="font-semibold text-primary">{exporting ? "Generating..." : "Download PBIP Project (.zip)"}</div>
-              <div className="text-xs text-primary/70">Ready to load in Power BI Desktop</div>
+              <div className="font-semibold text-[#d4a800] dark:text-[#F2C811]">{exporting ? "Generating..." : "Open in Power BI (.pbit)"}</div>
+              <div className="text-xs text-[#d4a800]/70 dark:text-[#F2C811]/70">Double-click to load M queries + DAX instantly</div>
             </div>
           </button>
           <button onClick={handleDownloadMQueries}
@@ -806,7 +821,7 @@ function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
           </button>
         </div>
         <p className="text-xs text-muted-foreground bg-surface-elevated/50 p-3 rounded-lg">
-          💡 <strong>To use in Power BI Desktop:</strong> Download the PBIP Project (.zip), extract the folder, and double click the <code>.pbip</code> file. Power BI Desktop will instantly load the entire semantic model containing all your M Queries, Data Types, and DAX Measures!
+          💡 <strong>To use in Power BI Desktop:</strong> Click <strong>"Open in Power BI (.pbit)"</strong> to download the template file. When you open the <code>.pbit</code> file, Power BI Desktop will instantly load the entire semantic model with all your M Queries and DAX Measures pre-loaded into the Query Editor.
         </p>
       </div>
     </div>
