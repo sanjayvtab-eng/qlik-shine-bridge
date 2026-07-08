@@ -507,7 +507,7 @@ function TabMQueryDataTypes({
         sourceQvsText, 
         etlQvsText, 
         analysis.sourceMappings,
-        analysis.finalTables.map(t => t.table)
+        analysis.finalTables.map(t => ({ table: t.table, lineageScript: t.lineageScript }))
       );
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
