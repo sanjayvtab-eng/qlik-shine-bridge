@@ -539,18 +539,6 @@ function TabMQueryDataTypes({
     a.click();
   };
 
-  const handleDownloadPbip = async () => {
-    try {
-      const blob = await generatePbipZip(analysis, "Stage5_M_Queries");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "Stage5_M_Queries_PBIP.zip";
-      a.click();
-    } catch (e) {
-      alert("Failed to generate PBIP zip: " + (e as Error).message);
-    }
-  };
-
   return (
     <div className="space-y-5">
       <div className="surface-card p-6 border border-border">
@@ -576,9 +564,6 @@ function TabMQueryDataTypes({
                 </button>
                 <button onClick={downloadAll} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated">
                   <Download className="h-3.5 w-3.5" /> Download All (.txt)
-                </button>
-                <button onClick={handleDownloadPbip} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F2C811]/10 border border-[#F2C811]/30 text-[#e6bd10] text-xs font-medium hover:bg-[#F2C811]/20">
-                  <Package className="h-3.5 w-3.5" /> Open in Power BI (.pbip)
                 </button>
               </>
             )}
