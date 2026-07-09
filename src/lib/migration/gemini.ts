@@ -686,7 +686,8 @@ export async function generatePowerQueryViaAi(
     - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a mapping of column names to Power BI types for each table.
     - You MUST append a final step to EVERY generated M query using \`Table.TransformColumnTypes\` that explicitly casts EVERY SINGLE COLUMN listed in that table's USER-DEFINED DATA TYPES mapping.
     - Map the string types to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical).
-    - Even if a column is an ID or you think it should be a number, if the USER-DEFINED DATA TYPES says "Text", you MUST cast it to \`type text\`.
+    - CRITICAL: The USER-DEFINED DATA TYPES are the absolute highest priority. They OVERRIDE all other rules (including rule [6b] about ID columns).
+    - If the user maps a column (even an ID column) to "Whole Number", you MUST cast it to \`Int64.Type\`. NEVER deviate from the user's explicit choice.
     - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this comprehensive formatting step at the very end.
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
@@ -757,7 +758,7 @@ export async function generatePowerQueryViaAi(
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
 
     **[6b] DATA TYPING FOR ID COLUMNS**
-    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers. 
+    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers, UNLESS explicitly overridden by the USER-DEFINED DATA TYPES section. 
     - Qlik often stores alphanumeric IDs (e.g., 'CUST0063'). Attempting to cast these to \`Int64.Type\` or \`type number\` in Power Query will result in fatal DataFormat.Errors.
 
     **[6c] TYPE SAFETY FOR NUMERICAL COMPARISONS (CRITICAL)**
