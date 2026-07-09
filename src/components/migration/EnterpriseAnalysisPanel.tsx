@@ -437,48 +437,7 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
             <DataTable rows={p.fields.map(f => ({ Column: f, "Power BI Type": typeCols[f] || "Text" }))} />
           </div>
 
-          <div className="surface-card p-4">
-            <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">5-Row Sample Data Preview</h5>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              {p.fields.length > 0 ? (
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-surface-elevated sticky top-0 z-10 border-b border-border">
-                    <tr>
-                      {p.fields.map(f => (
-                        <th key={f} className="py-2 px-3 font-semibold text-muted-foreground whitespace-nowrap">
-                          {f}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: 5 }).map((_, rIdx) => (
-                      <tr key={rIdx} className={rIdx % 2 === 0 ? "bg-surface" : "bg-surface-elevated/40"}>
-                        {p.fields.map(f => {
-                          const t = typeCols[f] || "Text";
-                          let val: React.ReactNode = "";
-                          if (t === "Whole Number") val = Math.floor(Math.random() * 1000) + 1;
-                          else if (t === "Decimal Number" || t === "Currency / Fixed Decimal") val = (Math.random() * 1000).toFixed(2);
-                          else if (t === "Date") val = `2025-0${(rIdx % 9) + 1}-1${rIdx}`;
-                          else if (t === "Date/Time") val = `2025-0${(rIdx % 9) + 1}-1${rIdx} 10:0${rIdx}:00`;
-                          else if (t === "True/False") val = rIdx % 2 === 0 ? "True" : "False";
-                          else val = `Sample_${f}_${rIdx + 1}`;
-                          
-                          return (
-                            <td key={f} className="py-1.5 px-3 whitespace-nowrap text-foreground/80 max-w-[200px] truncate" title={String(val)}>
-                              {val}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="text-xs text-muted-foreground italic p-3">No columns available for preview.</p>
-              )}
-            </div>
-          </div>
+
           <div className="surface-card p-4">
             <h5 className="text-xs font-semibold text-foreground/70 uppercase tracking-wide mb-2">DAX Measures</h5>
             {measures.length ? measures.map(m => (
@@ -812,6 +771,55 @@ function MQueryStepTable({ mCode }: { mCode: string }) {
   );
 }
 
+function SampleDataPreview({ fields, typeCols }: { fields: string[], typeCols: Record<string, string> }) {
+  return (
+    <div className="mt-4 border border-border rounded-xl overflow-hidden">
+      <div className="flex items-center px-4 py-3 bg-surface-elevated border-b border-border">
+        <span className="text-sm font-semibold text-foreground">5-Row Sample Data Preview</span>
+      </div>
+      <div className="overflow-x-auto">
+        {fields.length > 0 ? (
+          <table className="w-full text-xs text-left border-collapse">
+            <thead className="bg-surface-elevated sticky top-0 z-10 border-b border-border">
+              <tr>
+                {fields.map(f => (
+                  <th key={f} className="py-2.5 px-3 font-semibold text-muted-foreground whitespace-nowrap">
+                    {f}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, rIdx) => (
+                <tr key={rIdx} className={rIdx % 2 === 0 ? "bg-surface" : "bg-surface-elevated/20"}>
+                  {fields.map(f => {
+                    const t = typeCols[f] || "Text";
+                    let val: React.ReactNode = "";
+                    if (t === "Whole Number") val = Math.floor(Math.random() * 1000) + 1;
+                    else if (t === "Decimal Number" || t === "Currency / Fixed Decimal") val = (Math.random() * 1000).toFixed(2);
+                    else if (t === "Date") val = `2025-0${(rIdx % 9) + 1}-1${rIdx}`;
+                    else if (t === "Date/Time") val = `2025-0${(rIdx % 9) + 1}-1${rIdx} 10:0${rIdx}:00`;
+                    else if (t === "True/False") val = rIdx % 2 === 0 ? "True" : "False";
+                    else val = `Sample_${f}_${rIdx + 1}`;
+                    
+                    return (
+                      <td key={f} className="py-2 px-3 whitespace-nowrap text-foreground/80 max-w-[200px] truncate" title={String(val)}>
+                        {val}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-xs text-muted-foreground italic px-4 py-3">No columns available for preview.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ────────────────────────────────────────────────────────────────
 // TAB 5 — M Query & Data Types
 // ────────────────────────────────────────────────────────────────
@@ -992,12 +1000,18 @@ function TabMQueryDataTypes({
                 </button>
               ))}
             </div>
-            {tables[activeTable] && (
-              <>
-                <CodeBlock code={mq[tables[activeTable]] || ""} />
-                <MQueryStepTable mCode={mq[tables[activeTable]] || ""} />
-              </>
-            )}
+            {tables[activeTable] && (() => {
+              const tableName = tables[activeTable];
+              const tableDef = analysis.finalTables.find(t => t.table === tableName);
+              const effectiveTypes = buildEffectiveColumnTypes(savedTypeEdits)[tableName] || {};
+              return (
+                <>
+                  <CodeBlock code={mq[tableName] || ""} />
+                  <MQueryStepTable mCode={mq[tableName] || ""} />
+                  {tableDef && <SampleDataPreview fields={tableDef.fields} typeCols={effectiveTypes} />}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
