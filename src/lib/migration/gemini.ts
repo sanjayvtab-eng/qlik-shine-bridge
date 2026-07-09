@@ -682,13 +682,12 @@ export async function generatePowerQueryViaAi(
 
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
-    **[1] EXPLICIT DATA TYPE CASTING**
+    **[1] EXPLICIT DATA TYPE CASTING (CRITICAL RULE)**
     - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a mapping of column names to Power BI types for each table.
-    - You MUST append a final step to EVERY generated M query using \`Table.TransformColumnTypes\` that explicitly casts EVERY SINGLE COLUMN listed in that table's USER-DEFINED DATA TYPES mapping.
-    - Map the string types to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical).
-    - CRITICAL: The USER-DEFINED DATA TYPES are the absolute highest priority. They OVERRIDE all other rules (including rule [6b] about ID columns).
-    - If the user maps a column (even an ID column) to "Whole Number", you MUST cast it to \`Int64.Type\`. NEVER deviate from the user's explicit choice.
-    - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this comprehensive formatting step at the very end.
+    - You MUST create a final step called \`Typed_Final\` using \`Table.TransformColumnTypes\`.
+    - IN THIS STEP, YOU MUST INCLUDE EVERY SINGLE COLUMN FROM THE "USER-DEFINED DATA TYPES" MAPPING. Do not skip ANY column. If the mapping has 15 columns, your \`Table.TransformColumnTypes\` list must have exactly 15 columns!
+    - Map the string types strictly to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical, "Any" -> type any).
+    - Example: \`Typed_Final = Table.TransformColumnTypes(PreviousStep, {{"Col1", type text}, {"Col2", Int64.Type}, ...})\`
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...), Table.FromRecords(...), Table.FromRows(...), or any fake in-memory tables with hardcoded rows.
@@ -758,7 +757,7 @@ export async function generatePowerQueryViaAi(
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
 
     **[6b] DATA TYPING FOR ID COLUMNS**
-    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers, UNLESS explicitly overridden by the USER-DEFINED DATA TYPES section. 
+    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers. 
     - Qlik often stores alphanumeric IDs (e.g., 'CUST0063'). Attempting to cast these to \`Int64.Type\` or \`type number\` in Power Query will result in fatal DataFormat.Errors.
 
     **[6c] TYPE SAFETY FOR NUMERICAL COMPARISONS (CRITICAL)**
@@ -789,7 +788,7 @@ export async function generatePowerQueryViaAi(
     ### OUTPUT FORMAT:
     Return a strictly valid JSON array. Each object = one Power Query query. Output ONLY the required unified final tables. Do not include markdown codeblocks (\`\`\`).
     [
-      { "table": "FactSales_Final", "code": "let\\n    vSourcePath = \\"TODO: Set your base source folder path here\\" as text,\\n    // STEP 1: COMBINE SALES DATA\\n    Source_Sales2025 = Csv.Document(File.Contents(vSourcePath & \\"Sales2025.csv\\"), [Delimiter=\\",\\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\\n    Promoted_Sales2025 = Table.PromoteHeaders(Source_Sales2025, [PromoteAllScalars=true]),\\n    ...\\nin\\n    AddedSalesBand" }
+      { "table": "FactSales_Final", "code": "let\\n    vSourcePath = \\"TODO: Set your base source folder path here\\" as text,\\n    // STEP 1: COMBINE SALES DATA\\n    Source_Sales2025 = Csv.Document(File.Contents(vSourcePath & \\"Sales2025.csv\\"), [Delimiter=\\",\\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),\\n    Promoted_Sales2025 = Table.PromoteHeaders(Source_Sales2025, [PromoteAllScalars=true]),\\n    ...\\n    // FINAL STEP: CAST ALL DATA TYPES\\n    Typed_Final = Table.TransformColumnTypes(PreviousStep, {{\\"Col1\\", type text}, {\\"Col2\\", Int64.Type}})\\nin\\n    Typed_Final" }
     ]
   `;
 
