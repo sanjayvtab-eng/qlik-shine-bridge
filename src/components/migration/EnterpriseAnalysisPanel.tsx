@@ -485,7 +485,7 @@ function TabMQueryDataTypes({
   analysis: EnterpriseAnalysis;
   columnTypeEdits: Record<string, string>;
   onTypeChange: (key: string, val: string) => void;
-  onApplyTypes: () => void;
+  onApplyTypes: () => Promise<EnterpriseAnalysis | void>;
   applyingTypes: boolean;
   onAnalysisUpdate: (newAnalysis: EnterpriseAnalysis) => void;
 }) {
@@ -494,7 +494,8 @@ function TabMQueryDataTypes({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiQueries, setAiQueries] = useState<Record<string, string> | null>(null);
 
-  const handleAiGenerate = async () => {
+  const handleAiGenerate = async (latestAnalysis?: EnterpriseAnalysis | void) => {
+    const activeAnalysis = latestAnalysis || analysis;
     if (!businessMetadata || !technicalMetadata || !ruleBookMd) {
       setAiError("AI Lineage Analysis (Step 5 below) must be completed first to use the AI Query Engine.");
       return;
@@ -508,8 +509,12 @@ function TabMQueryDataTypes({
         ruleBookMd, 
         sourceQvsText, 
         etlQvsText, 
-        analysis.sourceMappings,
-        analysis.finalTables.map(t => ({ table: t.table, lineageScript: t.lineageScript }))
+        activeAnalysis.sourceMappings,
+        activeAnalysis.finalTables.map(t => ({ 
+          table: t.table, 
+          lineageScript: t.lineageScript,
+          columnTypes: activeAnalysis.columnTypes?.[t.table]
+        }))
       );
       const newMQueries: Record<string, string> = {};
       aiOutput.forEach(q => {
@@ -518,7 +523,7 @@ function TabMQueryDataTypes({
         }
       });
       setAiQueries(newMQueries);
-      onAnalysisUpdate({ ...analysis, mQueries: { ...analysis.mQueries, ...newMQueries } });
+      onAnalysisUpdate({ ...activeAnalysis, mQueries: { ...activeAnalysis.mQueries, ...newMQueries } });
     } catch (e) {
       setAiError("Failed to generate M Query: " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -583,7 +588,7 @@ function TabMQueryDataTypes({
             )}
             {aiQueries && (
               <>
-                <button onClick={handleAiGenerate} disabled={generatingAi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50">
+                <button onClick={() => handleAiGenerate()} disabled={generatingAi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50">
                   {generatingAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Regenerate
                 </button>
@@ -622,6 +627,80 @@ function TabMQueryDataTypes({
             {tables[activeTable] && <CodeBlock code={mq[tables[activeTable]] || ""} />}
           </>
         )}
+      </div>
+
+      <div className="surface-card p-6 border border-border">
+        <SectionHeader title="Filter data type editor" />
+        <div className="mb-4">
+          <select 
+            className="w-full max-w-sm px-3 py-2 bg-surface border border-border rounded-lg text-sm"
+            value={tableFilter}
+            onChange={(e) => setTableFilter(e.target.value)}
+          >
+            <option value="All">All final tables</option>
+            {analysis.finalTables.map(t => <option key={t.table} value={t.table}>{t.table}</option>)}
+          </select>
+        </div>
+        <div className="overflow-x-auto max-h-[400px] border border-border rounded-lg">
+          <table className="w-full text-left text-sm border-collapse">
+            <thead className="sticky top-0 bg-surface-elevated z-10">
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-3 px-4 font-medium">Table</th>
+                <th className="py-3 px-4 font-medium">Column</th>
+                <th className="py-3 px-4 font-medium">Power BI Data Type</th>
+                <th className="py-3 px-4 font-medium">Detected Role</th>
+                <th className="py-3 px-4 font-medium">Inference Source</th>
+                <th className="py-3 px-4 font-medium">Confidence</th>
+                <th className="py-3 px-4 font-medium">Inference Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {analysis.finalTables
+                .filter(t => tableFilter === "All" || t.table === tableFilter)
+                .flatMap(t => t.fields.map(f => {
+                  const key = `${t.table}.${f}`;
+                  const currentType = columnTypeEdits[key] || analysis.columnTypes?.[t.table]?.[f] || "Text";
+                  const meta = analysis.columnTypeMeta?.[t.table]?.[f] || { source: "Unknown", confidence: 0, reason: "Unknown" };
+                  const role = tableRole(t);
+                  return (
+                    <tr key={key} className="border-b border-border/50 hover:bg-surface-elevated/30 transition-colors">
+                      <td className="py-2 px-4 whitespace-nowrap">{t.table}</td>
+                      <td className="py-2 px-4 whitespace-nowrap font-medium">{f}</td>
+                      <td className="py-2 px-4">
+                        <select
+                          className="w-full px-2 py-1.5 bg-surface border border-border rounded text-sm focus:border-primary focus:ring-1 focus:ring-primary"
+                          value={currentType}
+                          onChange={(e) => onTypeChange(key, e.target.value)}
+                        >
+                          {TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                        </select>
+                      </td>
+                      <td className="py-2 px-4 whitespace-nowrap text-muted-foreground">{role}</td>
+                      <td className="py-2 px-4 whitespace-nowrap text-muted-foreground">{meta.source}</td>
+                      <td className="py-2 px-4 whitespace-nowrap text-muted-foreground">{meta.confidence}</td>
+                      <td className="py-2 px-4 text-xs text-muted-foreground max-w-xs truncate" title={meta.reason}>{meta.reason}</td>
+                    </tr>
+                  );
+                }))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex flex-col md:flex-row items-start gap-4">
+          <button
+            onClick={async () => {
+              const updatedAnalysis = await onApplyTypes();
+              handleAiGenerate(updatedAnalysis);
+            }}
+            disabled={applyingTypes || generatingAi}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all shrink-0"
+          >
+            {(applyingTypes || generatingAi) ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Apply data types and regenerate M
+          </button>
+          <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg text-sm leading-relaxed border border-blue-500/20">
+            <strong>Tip:</strong> Keep uncertain columns as Text or Any. Use Date, Whole Number, Decimal Number, or True/False only when the source values are consistent.
+          </div>
+        </div>
       </div>
 
       <div className="surface-card p-4">
@@ -958,6 +1037,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
         bypassQvd: m.bypassQvd, effectiveRef: m.effectiveRef, qvdProducerTable: m.qvdProducerTable,
       })));
       onAnalysisComplete();
+      return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Enterprise analysis failed.");
     } finally { setRunning(false); }
@@ -976,8 +1056,9 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
 
   const handleApplyTypes = useCallback(async () => {
     setApplyingTypes(true);
-    await runAnalysis(mappingUpdates, columnTypeEdits);
+    const result = await runAnalysis(mappingUpdates, columnTypeEdits);
     setApplyingTypes(false);
+    return result;
   }, [mappingUpdates, columnTypeEdits, runAnalysis]);
 
   if (!analysis && !running && !error) {
