@@ -20,35 +20,57 @@ export function generatePbitScript(
   projectName: string = "QLIK2PBI_Migration_Project"
 ): string {
   const mQueriesMap: Record<string, string> = analysis.mQueries || {};
-  const tables = analysis.semanticModel?.tables || [];
+  const smTablesMap = new Map((analysis.semanticModel?.tables || []).map((t: any) => [t.name, t]));
+  const typeCols = analysis.columnTypes || {};
+  const allMeasures = analysis.daxMeasures || [];
   const relationships = analysis.semanticModel?.relationships || [];
 
-  // ── Build DataModelSchema (TMSL) JSON string ──────────────────────────
-  const tmslTables = tables.map((t: any) => {
-    const mq = mQueriesMap[t.name] || `let\n    Source = "${t.name} - M Query not generated"\nin\n    Source`;
-    const cols = (t.columns || []).map((c: any) => ({
-      name: c.name,
-      dataType: mapDT(c.data_type || c.dataType || "string"),
-      summarizeBy: "none",
-      sourceColumn: c.name,
-      ...(c.formatString ? { formatString: c.formatString } : {})
-    }));
-    const measures = (t.measures || []).map((m: any) => ({
-      name: m.name,
-      expression: m.expression || "",
-      ...(m.formatString ? { formatString: m.formatString } : {})
-    }));
-    const obj: any = {
-      name: t.name,
-      columns: cols,
+  const tables = Object.keys(mQueriesMap).map((tName: string) => {
+    const mQuery = mQueriesMap[tName];
+    const smTable: any = smTablesMap.get(tName);
+    
+    let columns;
+    if (smTable && smTable.columns) {
+      columns = smTable.columns.map((c: any) => {
+        const col: any = { name: c.name, dataType: mapDT(c.data_type || c.dataType || "string"), sourceColumn: c.name };
+        if (c.formatString) col.formatString = c.formatString;
+        return col;
+      });
+    } else {
+      const tCols = typeCols[tName] || {};
+      columns = Object.keys(tCols).map(colName => ({
+        name: colName,
+        dataType: mapDT(tCols[colName]),
+        sourceColumn: colName
+      }));
+    }
+
+    let measures;
+    if (smTable && smTable.measures) {
+      measures = smTable.measures.map((m: any) => ({
+        name: m.name,
+        expression: m.expression || "",
+        ...(m.formatString ? { formatString: m.formatString } : {})
+      }));
+    } else {
+      const tMeasures = allMeasures.filter((m: any) => m.table === tName);
+      measures = tMeasures.map((m: any) => ({
+        name: m.measureName,
+        expression: m.dax || ""
+      }));
+    }
+
+    const tableObj: any = {
+      name: tName,
+      columns: columns.length > 0 ? columns : [{ name: "Column1", dataType: "string", sourceColumn: "Column1" }],
       partitions: [{
-        name: `${t.name}-partition`,
+        name: `${tName}-partition`,
         mode: "import",
-        source: { type: "m", expression: mq.split("\n") }
+        source: { type: "m", expression: mQuery.split("\n") }
       }]
     };
-    if (measures.length > 0) obj.measures = measures;
-    return obj;
+    if (measures && measures.length > 0) tableObj.measures = measures;
+    return tableObj;
   });
 
   const tmslRelationships = relationships.map((r: any) => ({

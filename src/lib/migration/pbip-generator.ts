@@ -69,35 +69,55 @@ export async function generatePbipZip(
 
   // SM model.bim (TMSL)
   const mQueriesMap: Record<string, string> = analysis.mQueries || {};
-  const tables = (analysis.semanticModel?.tables || []).map((t: any) => {
-    const mQuery = mQueriesMap[t.name] || `let\n    Source = "No query"\nin\n    Source`;
-    const columns = (t.columns || []).map((c: any) => {
-      const col: any = {
-        name: c.name,
-        dataType: mapDataType(c.data_type || c.dataType || "string"),
-        sourceColumn: c.name
-      };
-      if (c.formatString) col.formatString = c.formatString;
-      return col;
-    });
-    const measures = (t.measures || []).map((m: any) => ({
-      name: m.name,
-      expression: m.expression ? [m.expression] : [""], // TMSL requires array of strings or single string, let's use array
-      ...(m.formatString ? { formatString: m.formatString } : {})
-    }));
+  const smTablesMap = new Map((analysis.semanticModel?.tables || []).map((t: any) => [t.name, t]));
+  const typeCols = analysis.columnTypes || {};
+  const allMeasures = analysis.daxMeasures || [];
+
+  const tables = Object.keys(mQueriesMap).map((tName: string) => {
+    const mQuery = mQueriesMap[tName];
+    const smTable: any = smTablesMap.get(tName);
+    
+    let columns;
+    if (smTable && smTable.columns) {
+      columns = smTable.columns.map((c: any) => {
+        const col: any = { name: c.name, dataType: mapDataType(c.data_type || c.dataType || "string"), sourceColumn: c.name };
+        if (c.formatString) col.formatString = c.formatString;
+        return col;
+      });
+    } else {
+      const tCols = typeCols[tName] || {};
+      columns = Object.keys(tCols).map(colName => ({
+        name: colName,
+        dataType: mapDataType(tCols[colName]),
+        sourceColumn: colName
+      }));
+    }
+
+    let measures;
+    if (smTable && smTable.measures) {
+      measures = smTable.measures.map((m: any) => ({
+        name: m.name,
+        expression: m.expression ? [m.expression] : [""],
+        ...(m.formatString ? { formatString: m.formatString } : {})
+      }));
+    } else {
+      const tMeasures = allMeasures.filter((m: any) => m.table === tName);
+      measures = tMeasures.map((m: any) => ({
+        name: m.measureName,
+        expression: m.dax ? m.dax.split("\n") : [""]
+      }));
+    }
+
     const tableObj: any = {
-      name: t.name,
-      columns,
+      name: tName,
+      columns: columns.length > 0 ? columns : [{ name: "Column1", dataType: "string", sourceColumn: "Column1" }],
       partitions: [{
-        name: `${t.name}-partition`,
+        name: `${tName}-partition`,
         mode: "import",
-        source: {
-          type: "m",
-          expression: mQuery.split("\n") // Split by newline! (Rule 3)
-        }
+        source: { type: "m", expression: mQuery.split("\n") }
       }]
     };
-    if (measures.length > 0) tableObj.measures = measures;
+    if (measures && measures.length > 0) tableObj.measures = measures;
     return tableObj;
   });
 
