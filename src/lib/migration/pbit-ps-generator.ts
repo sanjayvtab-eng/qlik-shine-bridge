@@ -88,9 +88,9 @@ export function generatePbitScript(
       dataAccessOptions: { legacyRedirects: true, returnErrorValuesAsNull: true },
       defaultPowerBIDataSourceVersion: "powerBI_V3",
       sourceQueryCulture: "en-US",
-      tables: tmslTables,
+      tables,
       relationships: tmslRelationships,
-      annotations: [{ name: "PBI_QueryOrder", value: JSON.stringify(tmslTables.map((t: any) => t.name)) }]
+      annotations: [{ name: "PBI_QueryOrder", value: JSON.stringify(tables.map((t: any) => t.name)) }]
     }
   };
   const schemaJson = JSON.stringify(schema, null, 2).replace(/'/g, "''"); // escape single quotes for PS
