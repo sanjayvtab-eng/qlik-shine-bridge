@@ -38,10 +38,28 @@ function compressQvsScriptForAi(text: string): string {
 
 function sanitizeJsonString(rawJson: string): string {
   let clean = rawJson.trim();
-  if (clean.startsWith("```")) {
-    clean = clean.replace(/^```json\s*/i, "").replace(/```$/, "").trim();
-  }
   
+  // Extract just the JSON part (from first {/[ to last }/]) to ignore trailing text
+  const firstBracket = clean.indexOf('[');
+  const firstBrace = clean.indexOf('{');
+  let start = -1;
+  if (firstBracket !== -1 && firstBrace !== -1) start = Math.min(firstBracket, firstBrace);
+  else if (firstBracket !== -1) start = firstBracket;
+  else if (firstBrace !== -1) start = firstBrace;
+  
+  if (start !== -1) {
+    const lastBracket = clean.lastIndexOf(']');
+    const lastBrace = clean.lastIndexOf('}');
+    let end = -1;
+    if (lastBracket !== -1 && lastBrace !== -1) end = Math.max(lastBracket, lastBrace);
+    else if (lastBracket !== -1) end = lastBracket;
+    else if (lastBrace !== -1) end = lastBrace;
+    
+    if (end !== -1 && end >= start) {
+      clean = clean.substring(start, end + 1);
+    }
+  }
+
   let inString = false;
   let isEscaped = false;
   let result = "";
@@ -637,7 +655,7 @@ export async function generatePowerQueryViaAi(
   sourceQvsText?: string,
   etlQvsText?: string,
   sourceMappings?: { originalRef: string; mappedRef: string; connectorType: string }[],
-  targetTables?: { table: string, lineageScript: string }[]
+  targetTables?: { table: string, lineageScript: string, columnTypes?: Record<string, string> }[]
 ): Promise<{ table: string; code: string }[]> {
   const apiKey = getApiKey();
   if (!apiKey) throw new Error("Gemini API key is missing.");
@@ -664,12 +682,17 @@ export async function generatePowerQueryViaAi(
 
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
-    **[1] NO SIMULATED OR PLACEHOLDER DATA**
+    **[1] EXPLICIT DATA TYPE CASTING**
+    - If a table in TARGET TABLES includes a \`columnTypes\` object mapping columns to Power BI types (e.g., "Text", "Whole Number"), you MUST append a final step to the M query using \`Table.TransformColumnTypes\`.
+    - Map the string types to M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Currency / Fixed Decimal" -> Currency.Type, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical).
+    - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this formatting step at the very end.
+
+    **[2] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...) with hardcoded rows, SimulatedQVDData, SimulatedSales2025, or any fake in-memory tables.
     - Every query must reference an actual connector expression, not sample rows.
     - If the actual target source is unknown, emit a connector stub with a clear TODO comment, never fabricate rows.
 
-    **[2] SMART SOURCE CONNECTOR DETECTION WITH FULL NAVIGATION TABLE**
+    **[3] SMART SOURCE CONNECTOR DETECTION WITH FULL NAVIGATION TABLE**
     - Step 1: CAREFULLY read the raw QVS script for the exact source type:
       a) Look for LIB CONNECT TO 'ConnectionName' statements (e.g., 'SQL Server', 'Oracle', 'Snowflake', 'Databricks').
       b) Look for file extensions in LOAD ... FROM paths (.csv, .xlsx, .xls, .qvd).
