@@ -688,9 +688,11 @@ export async function generatePowerQueryViaAi(
     - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this formatting step at the very end.
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
-    - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...) with hardcoded rows, SimulatedQVDData, SimulatedSales2025, or any fake in-memory tables.
+    - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...), Table.FromRecords(...), Table.FromRows(...), or any fake in-memory tables with hardcoded rows.
+    - NEVER simulate Qlik ApplyMap with hardcoded \`Table.FromRecords({...})\`. If there is a mapping table, you MUST load it from an actual source (e.g. Csv.Document or Sql.Database).
     - Every query must reference an actual connector expression, not sample rows.
     - If the actual target source is unknown, emit a connector stub with a clear TODO comment, never fabricate rows.
+    - CRITICAL: Ensure the M query string starts exactly with \`let\` and ends properly with \`in\`. Do not drop the first letter.
 
     **[3] SMART SOURCE CONNECTOR DETECTION WITH FULL NAVIGATION TABLE**
     - Step 1: CAREFULLY read the raw QVS script for the exact source type:
