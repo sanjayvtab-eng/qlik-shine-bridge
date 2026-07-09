@@ -648,6 +648,68 @@ async function analyzeStage3B(
 import qlikToPbiCompleteRulebook from './docs/Qlik_to_PowerBI_Complete_Rulebook.md?raw';
 import qlikToPbiEquivalentReference from './docs/Qlik_to_PowerBI_Equivalent_Reference_v2.md?raw';
 
+// ──────────────────────────────────────────────────────────────────────────────
+// DETERMINISTIC TYPE INJECTION
+// After the AI generates M code, we programmatically strip any existing
+// Typed_Final step and inject a perfect one based on the user's saved types.
+// This is 100% reliable regardless of what the AI does.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const M_TYPE_MAP: Record<string, string> = {
+  'Text': 'type text',
+  'Whole Number': 'Int64.Type',
+  'Decimal Number': 'type number',
+  'Currency / Fixed Decimal': 'Currency.Type',
+  'Date': 'type date',
+  'Date/Time': 'type datetime',
+  'True/False': 'type logical',
+  'Any': 'type any',
+};
+
+function injectTypedFinal(mCode: string, columnTypes?: Record<string, string>): string {
+  if (!columnTypes || Object.keys(columnTypes).length === 0) return mCode;
+
+  // Build the full type pair list for every user-defined column
+  const typePairs = Object.entries(columnTypes)
+    .map(([col, pbiType]) => {
+      const mType = M_TYPE_MAP[pbiType] || 'type text';
+      return `        {"${col}", ${mType}}`;
+    })
+    .join(',\n');
+
+  // Use List.Select + Table.ColumnNames to safely skip any column that doesn't
+  // actually exist in the table — prevents "column not found" errors.
+  const typedFinalStep =
+    `    // STEP FINAL: APPLY USER-DEFINED DATA TYPES (safe - skips missing columns)\n` +
+    `    _AllTypeDefs = {\n${typePairs}\n    },\n` +
+    `    _ExistingCols = Table.ColumnNames(##PREV##),\n` +
+    `    _SafeTypeDefs = List.Select(_AllTypeDefs, each List.Contains(_ExistingCols, _{0})),\n` +
+    `    Typed_Final = Table.TransformColumnTypes(##PREV##, _SafeTypeDefs)`;
+
+  // Find the last step name in the "in" clause
+  const inMatch = mCode.match(/^\s*in\s+(\w+)\s*$/m);
+  if (!inMatch) return mCode;
+
+  const prevStepName = inMatch[1].trim();
+  const safePrev = prevStepName === 'Typed_Final' ? 'Added_Band' : prevStepName;
+
+  // Remove any existing Typed_Final block the AI may have generated
+  const withoutOldTyped = mCode
+    .replace(/,?[ \t]*\/\/[^\n]*(FINAL|TYPE|CAST)[^\n]*\n[ \t]*Typed_Final[ \t]*=[^\n]+/gi, '')
+    .replace(/,?[ \t]*Typed_Final[ \t]*=[ \t]*[^\n]+/gi, '');
+
+  const inIndex = withoutOldTyped.search(/^\s*in\s+\w+\s*$/m);
+  if (inIndex === -1) return mCode;
+
+  const beforeIn = withoutOldTyped.slice(0, inIndex).replace(/[,\s]+$/, '');
+  const injected =
+    `${beforeIn},\n` +
+    `${typedFinalStep.replaceAll('##PREV##', safePrev)}\n` +
+    `in\n    Typed_Final`;
+
+  return injected;
+}
+
 export async function generatePowerQueryViaAi(
   businessMetadata: BusinessMetadata,
   technicalMetadata: TechnicalMetadata,
@@ -682,13 +744,11 @@ export async function generatePowerQueryViaAi(
 
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
-    **[1] EXPLICIT DATA TYPE CASTING (CRITICAL RULE)**
-    - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a COMPLETE mapping of EVERY column for each table.
-    - You MUST create a final step called \`Typed_Final\` using \`Table.TransformColumnTypes\`.
-    - THE \`Typed_Final\` STEP MUST CONTAIN EXACTLY AS MANY COLUMN ENTRIES AS ARE IN THE "USER-DEFINED DATA TYPES" MAPPING FOR THAT TABLE. If the mapping has 20 columns, your \`Table.TransformColumnTypes\` must have all 20. If you have fewer than the count, you FAILED this rule.
-    - Map the string types strictly to standard M types: "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical, "Any" -> type any.
-    - BLIND OBEDIENCE REQUIRED: You MUST obey the user's data types exactly as provided, even if they seem semantically incorrect. NEVER "correct" the user's data types.
-    - Example: \`Typed_Final = Table.TransformColumnTypes(PreviousStep, {{"Col1", type text}, {"Col2", Int64.Type}, {"Col3", type number}, ...})\`
+    **[1] DATA TYPE CASTING — DO NOT GENERATE THIS**
+    - The system will automatically inject a \`Typed_Final = Table.TransformColumnTypes(...)\` step after your code is compiled.
+    - DO NOT generate any \`Typed_Final\` step yourself. DO NOT end your query with \`in Typed_Final\`.
+    - End your query with the last transformation step you built (e.g., \`in Added_Band\` or \`in Merged_Final\`).
+    - The system handles all type casting — your job is ONLY to generate the ETL transformation steps.
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...), Table.FromRecords(...), Table.FromRows(...), or any fake in-memory tables with hardcoded rows.
@@ -812,7 +872,20 @@ export async function generatePowerQueryViaAi(
 
     const data = await response.json();
     const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-    return JSON.parse(sanitizeJsonString(resultText));
+    const rawResults: { table: string; code: string }[] = JSON.parse(sanitizeJsonString(resultText));
+    // Deterministically inject the correct Typed_Final step based on user-saved types
+    const tableTypeMap: Record<string, Record<string, string>> = {};
+    if (targetTables) {
+      for (const t of targetTables) {
+        if (t.columnTypes && Object.keys(t.columnTypes).length > 0) {
+          tableTypeMap[t.table] = t.columnTypes;
+        }
+      }
+    }
+    return rawResults.map(q => ({
+      ...q,
+      code: injectTypedFinal(q.code, tableTypeMap[q.table]),
+    }));
   } catch (error) {
     console.info(`[Power Query AI] ${pqEngineModel} encountered an error or rate limit. Throwing to fallback compiler...`);
     throw error;
