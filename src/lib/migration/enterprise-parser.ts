@@ -539,6 +539,7 @@ export function detectTables(operations: Operation[]): Record<string, TableProfi
       const lin = buildLineage(t, operations, by, joins, concats, qvdProducerMap, qvdProducerByName, visited);
       p.lineageIds = lin.map(o => o.id);
       p.lineageScript = lin.map(o => `// ${o.file} | lines ${o.startLine}-${o.endLine} | ${o.opType} | ${o.table}\n${o.raw.trim()}`).join('\n\n');
+      p.fields = uniq(lin.flatMap(o => (o.inlineColumns.length ? o.inlineColumns : o.fields).filter(f => f !== '*')));
       p.sourceRefs = uniq(lin.flatMap(o => o.sourceRefs));
       p.qvdInputs = uniq(lin.flatMap(o => o.qvdInputs));
       p.qvdOutputs = uniq(lin.flatMap(o => o.qvdOutputs));
