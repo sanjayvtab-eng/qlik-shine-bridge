@@ -138,7 +138,7 @@ export async function generatePbixFile(
     name: `${r.fromTable}_${r.fromColumn}_to_${r.toTable}_${r.toColumn}`,
     fromTable: r.fromTable, fromColumn: r.fromColumn, toTable: r.toTable, toColumn: r.toColumn,
     crossFilteringBehavior: r.direction === "Both" ? "bothDirections" : "oneDirection",
-    joinOnDateBehavior: "datePartOnly", isActive: true
+    joinOnDateBehavior: "datePartOnly", isActive: r.active !== false
   }));
 
   const dataModelSchema = {

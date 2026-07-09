@@ -108,7 +108,7 @@ export async function generatePbipZip(
     toTable: r.toTable,
     toColumn: r.toColumn,
     crossFilteringBehavior: r.direction === "Both" ? "bothDirections" : "oneDirection",
-    isActive: true
+    isActive: r.active !== false
   }));
 
   const modelBim = {

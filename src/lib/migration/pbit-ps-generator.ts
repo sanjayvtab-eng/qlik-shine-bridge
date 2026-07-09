@@ -53,12 +53,9 @@ export function generatePbitScript(
 
   const tmslRelationships = relationships.map((r: any) => ({
     name: `${r.fromTable}_${r.fromColumn}_to_${r.toTable}_${r.toColumn}`,
-    fromTable: r.fromTable,
-    fromColumn: r.fromColumn,
-    toTable: r.toTable,
-    toColumn: r.toColumn,
+    fromTable: r.fromTable, fromColumn: r.fromColumn, toTable: r.toTable, toColumn: r.toColumn,
     crossFilteringBehavior: r.direction === "Both" ? "bothDirections" : "oneDirection",
-    isActive: true
+    joinOnDateBehavior: "datePartOnly", isActive: r.active !== false
   }));
 
   const schema = {
