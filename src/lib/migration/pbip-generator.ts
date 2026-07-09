@@ -111,6 +111,18 @@ export async function generatePbipZip(
     isActive: r.active !== false
   }));
 
+  const tableNames = new Set(tables.map((t: any) => t.name));
+  const expressions = [];
+  for (const [name, query] of Object.entries(mQueriesMap)) {
+    if (!tableNames.has(name)) {
+      expressions.push({
+        name,
+        kind: "m",
+        expression: query.split("\n")
+      });
+    }
+  }
+
   const modelBim = {
     name: "SemanticModel",
     compatibilityLevel: 1565, // Rule 5: 1565
@@ -123,7 +135,8 @@ export async function generatePbipZip(
       defaultPowerBIDataSourceVersion: "powerBI_V3",
       sourceQueryCulture: "en-US",
       tables,
-      relationships
+      relationships,
+      expressions
     }
   };
   smFolder.file("model.bim", JSON.stringify(modelBim, null, 2));

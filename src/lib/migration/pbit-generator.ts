@@ -141,14 +141,29 @@ export async function generatePbixFile(
     joinOnDateBehavior: "datePartOnly", isActive: r.active !== false
   }));
 
+  const tableNames = new Set(tables.map((t: any) => t.name));
+  const expressions = [];
+  for (const [name, query] of Object.entries(mQueriesMap)) {
+    if (!tableNames.has(name)) {
+      expressions.push({
+        name,
+        kind: "m",
+        expression: query.split("\n")
+      });
+    }
+  }
+
   const dataModelSchema = {
     name: projectName,
     compatibilityLevel: 1550,
     model: {
-      culture: "en-US", collation: "Latin1_General_100_BIN2_UTF8",
+      culture: "en-US",
       dataAccessOptions: { legacyRedirects: true, returnErrorValuesAsNull: true },
-      defaultPowerBIDataSourceVersion: "powerBI_V3", sourceQueryCulture: "en-US",
-      tables, relationships,
+      defaultPowerBIDataSourceVersion: "powerBI_V3",
+      sourceQueryCulture: "en-US",
+      tables,
+      relationships,
+      expressions,
       annotations: [{ name: "PBI_QueryOrder", value: JSON.stringify(tables.map((t: any) => t.name)) }]
     }
   };
