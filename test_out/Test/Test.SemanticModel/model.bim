@@ -1,0 +1,83 @@
+{
+  "name": "SemanticModel",
+  "compatibilityLevel": 1565,
+  "model": {
+    "culture": "en-US",
+    "dataAccessOptions": {
+      "legacyRedirects": true,
+      "returnErrorValuesAsNull": true
+    },
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "sourceQueryCulture": "en-US",
+    "tables": [
+      {
+        "name": "Sales",
+        "columns": [
+          {
+            "name": "Column1",
+            "dataType": "string",
+            "sourceColumn": "Column1"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Sales-partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let Source = 1 in Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Customers",
+        "columns": [
+          {
+            "name": "Column1",
+            "dataType": "string",
+            "sourceColumn": "Column1"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Customers-partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let Source = 2 in Source"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Products",
+        "columns": [
+          {
+            "name": "Column1",
+            "dataType": "string",
+            "sourceColumn": "Column1"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "Products-partition",
+            "mode": "import",
+            "source": {
+              "type": "m",
+              "expression": [
+                "let Source = 3 in Source"
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [],
+    "expressions": []
+  }
+}

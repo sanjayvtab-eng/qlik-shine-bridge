@@ -131,12 +131,25 @@ export async function generatePbixFile(
         return col;
       });
     } else {
-      const tCols = typeCols[tName] || {};
-      columns = Object.keys(tCols).map(colName => ({
-        name: colName,
-        dataType: mapDataType(tCols[colName]),
-        sourceColumn: colName
-      }));
+      const tCols = typeCols[tName];
+      if (tCols && Object.keys(tCols).length > 0) {
+        columns = Object.keys(tCols).map(colName => ({
+          name: colName,
+          dataType: mapDataType(tCols[colName]),
+          sourceColumn: colName
+        }));
+      } else {
+        const profile = analysis.profiles?.[tName];
+        if (profile && profile.fields && profile.fields.length > 0) {
+          columns = profile.fields.map((f: string) => ({
+            name: f,
+            dataType: "string",
+            sourceColumn: f
+          }));
+        } else {
+          columns = [{ name: "Column1", dataType: "string", sourceColumn: "Column1" }];
+        }
+      }
     }
 
     let measures;
