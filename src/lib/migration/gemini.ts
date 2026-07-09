@@ -683,12 +683,12 @@ export async function generatePowerQueryViaAi(
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
     **[1] EXPLICIT DATA TYPE CASTING (CRITICAL RULE)**
-    - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a mapping of column names to Power BI types for each table.
+    - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a COMPLETE mapping of EVERY column for each table.
     - You MUST create a final step called \`Typed_Final\` using \`Table.TransformColumnTypes\`.
-    - IN THIS STEP, YOU MUST INCLUDE EVERY SINGLE COLUMN FROM THE "USER-DEFINED DATA TYPES" MAPPING. Do not skip ANY column. If the mapping has 15 columns, your \`Table.TransformColumnTypes\` list must have exactly 15 columns!
-    - Map the string types strictly to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical, "Any" -> type any).
-    - BLIND OBEDIENCE REQUIRED: You MUST obey the user's data types exactly as provided, even if they seem semantically incorrect or will cause Power BI errors. For example, if the user specifies "Whole Number" for a column named "ProductName", you MUST cast it to Int64.Type. If they specify "Decimal Number" for "SalesBand" (which contains text like "High"), you MUST cast it to type number. NEVER "correct" the user's data types.
-    - Example: \`Typed_Final = Table.TransformColumnTypes(PreviousStep, {{"Col1", type text}, {"Col2", Int64.Type}, ...})\`
+    - THE \`Typed_Final\` STEP MUST CONTAIN EXACTLY AS MANY COLUMN ENTRIES AS ARE IN THE "USER-DEFINED DATA TYPES" MAPPING FOR THAT TABLE. If the mapping has 20 columns, your \`Table.TransformColumnTypes\` must have all 20. If you have fewer than the count, you FAILED this rule.
+    - Map the string types strictly to standard M types: "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical, "Any" -> type any.
+    - BLIND OBEDIENCE REQUIRED: You MUST obey the user's data types exactly as provided, even if they seem semantically incorrect. NEVER "correct" the user's data types.
+    - Example: \`Typed_Final = Table.TransformColumnTypes(PreviousStep, {{"Col1", type text}, {"Col2", Int64.Type}, {"Col3", type number}, ...})\`
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...), Table.FromRecords(...), Table.FromRows(...), or any fake in-memory tables with hardcoded rows.
@@ -772,7 +772,7 @@ export async function generatePowerQueryViaAi(
 
     ### Input Context:
     - TARGET TABLES (GENERATE QUERIES ONLY FOR THESE): ${targetTables ? JSON.stringify(targetTables.map(t => t.table)) : "Use Technical Metadata"}
-    - USER-DEFINED DATA TYPES (CRITICAL - APPLY THESE TYPES): ${targetTables ? JSON.stringify(targetTables.map(t => ({ table: t.table, columnTypes: t.columnTypes }))) : "None"}
+    - USER-DEFINED DATA TYPES (CRITICAL - APPLY THESE TYPES TO ALL LISTED COLUMNS): ${targetTables ? targetTables.map(t => `Table "${t.table}" has ${Object.keys(t.columnTypes || {}).length} columns: ${JSON.stringify(t.columnTypes)}`).join(' | ') : "None"}
     - ISOLATED BUSINESS LOGIC SCRIPTS (CRITICAL - DO NOT MISS LOGIC HERE): ${targetTables ? JSON.stringify(targetTables.map(t => ({ table: t.table, lineageScript: t.lineageScript }))) : "Not provided"}
     - Business Requirements: ${JSON.stringify(businessMetadata)}
     - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}

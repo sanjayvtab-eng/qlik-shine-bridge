@@ -511,14 +511,16 @@ function TabMQueryDataTypes({
   const buildEffectiveColumnTypes = (edits: Record<string, string>) => {
     const effective: Record<string, Record<string, string>> = {};
     for (const t of analysis.finalTables) {
-      effective[t.table] = { ...(analysis.columnTypes?.[t.table] || {}) };
-    }
-    for (const [key, val] of Object.entries(edits)) {
-      const dot = key.indexOf('.');
-      if (dot === -1) continue;
-      const table = key.slice(0, dot);
-      const col = key.slice(dot + 1);
-      if (effective[table]) effective[table][col] = val;
+      effective[t.table] = {};
+      // Start from inferred defaults for every field in the table
+      for (const field of t.fields) {
+        const key = `${t.table}.${field}`;
+        // User saved override takes priority, then inferred analysis type, then default Text
+        effective[t.table][field] =
+          edits[key] ||
+          analysis.columnTypes?.[t.table]?.[field] ||
+          "Text";
+      }
     }
     return effective;
   };
