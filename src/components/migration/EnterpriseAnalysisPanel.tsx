@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import {
   Database, FileText, Table2, GitBranch, Layers, BarChart3,
   Network, ShieldCheck, Download, Braces, Loader2, AlertCircle,
-  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles, Package
+  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles, Package, Save
 } from "lucide-react";
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
@@ -480,40 +480,69 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
 // ────────────────────────────────────────────────────────────────
 
 function TabMQueryDataTypes({
-  analysis, columnTypeEdits, onTypeChange, onApplyTypes, applyingTypes, onAnalysisUpdate
+  analysis, columnTypeEdits, onTypeChange, onAnalysisUpdate
 }: {
   analysis: EnterpriseAnalysis;
   columnTypeEdits: Record<string, string>;
   onTypeChange: (key: string, val: string) => void;
-  onApplyTypes: () => Promise<EnterpriseAnalysis | void>;
-  applyingTypes: boolean;
   onAnalysisUpdate: (newAnalysis: EnterpriseAnalysis) => void;
 }) {
   const { businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText } = useMigration();
   const [generatingAi, setGeneratingAi] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiQueries, setAiQueries] = useState<Record<string, string> | null>(null);
+  const [savedTypeEdits, setSavedTypeEdits] = useState<Record<string, string>>({});
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  const handleAiGenerate = async (latestAnalysis?: EnterpriseAnalysis | void) => {
-    const activeAnalysis = latestAnalysis || analysis;
+  const handleTypeChange = (key: string, val: string) => {
+    onTypeChange(key, val);
+    setHasUnsavedChanges(true);
+    setSaveSuccess(false);
+  };
+
+  const handleSave = () => {
+    setSavedTypeEdits({ ...columnTypeEdits });
+    setHasUnsavedChanges(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  const buildEffectiveColumnTypes = (edits: Record<string, string>) => {
+    const effective: Record<string, Record<string, string>> = {};
+    for (const t of analysis.finalTables) {
+      effective[t.table] = { ...(analysis.columnTypes?.[t.table] || {}) };
+    }
+    for (const [key, val] of Object.entries(edits)) {
+      const dot = key.indexOf('.');
+      if (dot === -1) continue;
+      const table = key.slice(0, dot);
+      const col = key.slice(dot + 1);
+      if (effective[table]) effective[table][col] = val;
+    }
+    return effective;
+  };
+
+  const handleAiGenerate = async () => {
     if (!businessMetadata || !technicalMetadata || !ruleBookMd) {
       setAiError("AI Lineage Analysis (Step 5 below) must be completed first to use the AI Query Engine.");
       return;
     }
+    const effectiveTypes = buildEffectiveColumnTypes(savedTypeEdits);
     setGeneratingAi(true);
     setAiError(null);
     try {
       const aiOutput = await generatePowerQueryViaAi(
-        businessMetadata, 
-        technicalMetadata, 
-        ruleBookMd, 
-        sourceQvsText, 
-        etlQvsText, 
-        activeAnalysis.sourceMappings,
-        activeAnalysis.finalTables.map(t => ({ 
-          table: t.table, 
+        businessMetadata,
+        technicalMetadata,
+        ruleBookMd,
+        sourceQvsText,
+        etlQvsText,
+        analysis.sourceMappings,
+        analysis.finalTables.map(t => ({
+          table: t.table,
           lineageScript: t.lineageScript,
-          columnTypes: activeAnalysis.columnTypes?.[t.table]
+          columnTypes: effectiveTypes[t.table]
         }))
       );
       const newMQueries: Record<string, string> = {};
@@ -523,7 +552,7 @@ function TabMQueryDataTypes({
         }
       });
       setAiQueries(newMQueries);
-      onAnalysisUpdate({ ...activeAnalysis, mQueries: { ...activeAnalysis.mQueries, ...newMQueries } });
+      onAnalysisUpdate({ ...analysis, mQueries: { ...analysis.mQueries, ...newMQueries } });
     } catch (e) {
       setAiError("Failed to generate M Query: " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -670,7 +699,7 @@ function TabMQueryDataTypes({
                         <select
                           className="w-full px-2 py-1.5 bg-surface border border-border rounded text-sm focus:border-primary focus:ring-1 focus:ring-primary"
                           value={currentType}
-                          onChange={(e) => onTypeChange(key, e.target.value)}
+                          onChange={(e) => handleTypeChange(key, e.target.value)}
                         >
                           {TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                         </select>
@@ -685,21 +714,41 @@ function TabMQueryDataTypes({
             </tbody>
           </table>
         </div>
-        <div className="mt-4 flex flex-col md:flex-row items-start gap-4">
+        <div className="mt-4 flex flex-col md:flex-row items-start gap-3">
+          {/* Save button */}
           <button
-            onClick={async () => {
-              const updatedAnalysis = await onApplyTypes();
-              handleAiGenerate(updatedAnalysis);
-            }}
-            disabled={applyingTypes || generatingAi}
+            onClick={handleSave}
+            disabled={!hasUnsavedChanges}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border text-sm font-medium shadow-sm hover:bg-surface-elevated disabled:opacity-40 transition-all shrink-0"
+          >
+            {saveSuccess
+              ? <><Check className="h-4 w-4 text-success" /><span className="text-success">Saved!</span></>
+              : <><Save className="h-4 w-4" />Save data types</>
+            }
+          </button>
+
+          {/* Generate / Regenerate button */}
+          <button
+            onClick={() => handleAiGenerate()}
+            disabled={generatingAi || hasUnsavedChanges}
+            title={hasUnsavedChanges ? "Save your data type changes first" : undefined}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all shrink-0"
           >
-            {(applyingTypes || generatingAi) ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Apply data types and regenerate M
+            {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {generatingAi ? "Generating..." : (aiQueries ? "Regenerate M Query" : "Generate M Query")}
           </button>
-          <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg text-sm leading-relaxed border border-blue-500/20">
-            <strong>Tip:</strong> Keep uncertain columns as Text or Any. Use Date, Whole Number, Decimal Number, or True/False only when the source values are consistent.
-          </div>
+
+          {/* Info tip */}
+          {hasUnsavedChanges && (
+            <div className="p-3 bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-lg text-sm leading-relaxed border border-yellow-500/20">
+              <strong>Unsaved changes:</strong> Click <em>Save data types</em> first, then generate.
+            </div>
+          )}
+          {!hasUnsavedChanges && !saveSuccess && (
+            <div className="p-3 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg text-sm leading-relaxed border border-blue-500/20">
+              <strong>Tip:</strong> Change types, click <em>Save</em>, then click <em>Generate M Query</em>.
+            </div>
+          )}
         </div>
       </div>
 
@@ -1174,7 +1223,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
                     {id === "mapping"    && <TabSourceMapping analysis={analysis} mappingRows={mappingRows} onMappingChange={setMappingRows} onApply={handleApplyMapping} applying={applying} />}
                     {id === "all-tables" && <TabAllTables analysis={analysis} />}
                     {id === "final"      && <TabFinalTables analysis={analysis} />}
-                    {id === "mquery"     && <TabMQueryDataTypes analysis={analysis} columnTypeEdits={columnTypeEdits} onTypeChange={(k, v) => setColumnTypeEdits(p => ({ ...p, [k]: v }))} onApplyTypes={handleApplyTypes} applyingTypes={applyingTypes} onAnalysisUpdate={setAnalysis} />}
+                    {id === "mquery"     && <TabMQueryDataTypes analysis={analysis} columnTypeEdits={columnTypeEdits} onTypeChange={(k, v) => setColumnTypeEdits(p => ({ ...p, [k]: v }))} onAnalysisUpdate={setAnalysis} />}
                     {id === "dax"        && <TabDaxMeasures analysis={analysis} />}
                     {id === "model"      && <TabSemanticModel analysis={analysis} />}
                     {id === "validation" && <TabValidation analysis={analysis} />}
