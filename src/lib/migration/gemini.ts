@@ -683,9 +683,11 @@ export async function generatePowerQueryViaAi(
     ### STRICT CONSTRAINTS & PRODUCTION REQUIREMENTS (ALL MANDATORY):
 
     **[1] EXPLICIT DATA TYPE CASTING**
-    - If a table in TARGET TABLES includes a \`columnTypes\` object mapping columns to Power BI types (e.g., "Text", "Whole Number"), you MUST append a final step to the M query using \`Table.TransformColumnTypes\`.
-    - Map the string types to M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Currency / Fixed Decimal" -> Currency.Type, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical).
-    - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this formatting step at the very end.
+    - Under "Input Context" below, there is a section called "USER-DEFINED DATA TYPES". It provides a mapping of column names to Power BI types for each table.
+    - You MUST append a final step to EVERY generated M query using \`Table.TransformColumnTypes\` that explicitly casts EVERY SINGLE COLUMN listed in that table's USER-DEFINED DATA TYPES mapping.
+    - Map the string types to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical).
+    - Even if a column is an ID or you think it should be a number, if the USER-DEFINED DATA TYPES says "Text", you MUST cast it to \`type text\`.
+    - Do NOT alter your overall M Query logic. Keep your exact current logic, but append this comprehensive formatting step at the very end.
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
     - ABSOLUTELY FORBIDDEN: Do NOT generate #table(...), Table.FromRecords(...), Table.FromRows(...), or any fake in-memory tables with hardcoded rows.
@@ -769,7 +771,8 @@ export async function generatePowerQueryViaAi(
 
     ### Input Context:
     - TARGET TABLES (GENERATE QUERIES ONLY FOR THESE): ${targetTables ? JSON.stringify(targetTables.map(t => t.table)) : "Use Technical Metadata"}
-    - ISOLATED BUSINESS LOGIC SCRIPTS (CRITICAL - DO NOT MISS LOGIC HERE): ${targetTables ? JSON.stringify(targetTables) : "Not provided"}
+    - USER-DEFINED DATA TYPES (CRITICAL - APPLY THESE TYPES): ${targetTables ? JSON.stringify(targetTables.map(t => ({ table: t.table, columnTypes: t.columnTypes }))) : "None"}
+    - ISOLATED BUSINESS LOGIC SCRIPTS (CRITICAL - DO NOT MISS LOGIC HERE): ${targetTables ? JSON.stringify(targetTables.map(t => ({ table: t.table, lineageScript: t.lineageScript }))) : "Not provided"}
     - Business Requirements: ${JSON.stringify(businessMetadata)}
     - Technical Schema Blueprint: ${JSON.stringify(technicalMetadata)}
     - Source Mappings (USE THESE PATHS IN YOUR QUERIES): ${JSON.stringify(sourceMappings || [])}
