@@ -687,6 +687,7 @@ export async function generatePowerQueryViaAi(
     - You MUST create a final step called \`Typed_Final\` using \`Table.TransformColumnTypes\`.
     - IN THIS STEP, YOU MUST INCLUDE EVERY SINGLE COLUMN FROM THE "USER-DEFINED DATA TYPES" MAPPING. Do not skip ANY column. If the mapping has 15 columns, your \`Table.TransformColumnTypes\` list must have exactly 15 columns!
     - Map the string types strictly to standard M types (e.g., "Text" -> type text, "Whole Number" -> Int64.Type, "Decimal Number" -> type number, "Date" -> type date, "Date/Time" -> type datetime, "True/False" -> type logical, "Any" -> type any).
+    - BLIND OBEDIENCE REQUIRED: You MUST obey the user's data types exactly as provided, even if they seem semantically incorrect or will cause Power BI errors. For example, if the user specifies "Whole Number" for a column named "ProductName", you MUST cast it to Int64.Type. If they specify "Decimal Number" for "SalesBand" (which contains text like "High"), you MUST cast it to type number. NEVER "correct" the user's data types.
     - Example: \`Typed_Final = Table.TransformColumnTypes(PreviousStep, {{"Col1", type text}, {"Col2", Int64.Type}, ...})\`
 
     **[2] NO SIMULATED OR PLACEHOLDER DATA**
@@ -757,8 +758,8 @@ export async function generatePowerQueryViaAi(
     - Preserve ALL columns from the QVS script in the final output. Do not drop IDs, dates, or metrics.
 
     **[6b] DATA TYPING FOR ID COLUMNS**
-    - Treat ALL ID columns (e.g., CustomerID, ProductID, RegionID, SalesID) as \`type text\`, NEVER as integers or numbers. 
-    - Qlik often stores alphanumeric IDs (e.g., 'CUST0063'). Attempting to cast these to \`Int64.Type\` or \`type number\` in Power Query will result in fatal DataFormat.Errors.
+    - Unless overridden by the USER-DEFINED DATA TYPES mapping, you should generally treat ID columns (e.g., CustomerID) as \`type text\`. 
+    - However, if the USER-DEFINED DATA TYPES explicitly requests "Whole Number" for an ID column, YOU MUST OBEY THE USER and cast it to \`Int64.Type\`.
 
     **[6c] TYPE SAFETY FOR NUMERICAL COMPARISONS (CRITICAL)**
     - In Power Query, comparing a text column to a number (e.g., \`[RevenueUSD] > 10000\`) throws a fatal \`Expression.Error: We cannot apply operator < to types Number and Text\`.
