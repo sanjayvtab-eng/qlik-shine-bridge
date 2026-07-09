@@ -476,6 +476,300 @@ function TabFinalTables({ analysis }: { analysis: EnterpriseAnalysis }) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// M QUERY STEP EXPLANATION — deterministic parser
+// ────────────────────────────────────────────────────────────────
+
+interface MQueryStep {
+  seq: number;
+  stepName: string;
+  stepType: string;
+  isFinalOutputStep: boolean;
+  explanation: string;
+  columns: string[];
+}
+
+function inferStepType(name: string, body: string): string {
+  const n = name.toLowerCase();
+  const b = body.toLowerCase();
+  if (n === 'typed_final' || b.includes('table.transformcolumntypes')) return 'Data type enforcement';
+  if (b.includes('_alldefs') || b.includes('_existingcols') || b.includes('_safetypedefs')) return 'Safe type filter';
+  if (b.includes('table.addcolumn')) return 'Calculated column';
+  if (b.includes('csv.document') || b.includes('excel.workbook') || b.includes('file.contents') || b.includes('sql.database')) return 'Source connector';
+  if (b.includes('table.promoteheaders')) return 'Header promotion';
+  if (b.includes('table.combine') || b.includes('table.concatenate')) return 'Table combine / union';
+  if (b.includes('table.nestedjoin') || b.includes('table.join')) return 'Table join';
+  if (b.includes('table.expandtablecolumn') || b.includes('table.expandrecordcolumn')) return 'Column expansion';
+  if (b.includes('table.replacevalue') || b.includes('table.filldown') || b.includes('replacer.')) return 'Null / value replacement';
+  if (b.includes('table.selectrows') || b.includes('table.removerows')) return 'Row filter';
+  if (b.includes('table.selectcolumns') || b.includes('table.removecolumns') || b.includes('table.renamecolumns')) return 'Column reshape';
+  if (b.includes('table.fromrecords') || b.includes('#table') || b.includes('inline')) return 'Inline / static table';
+  if (b.includes('list.select') || b.includes('list.contains')) return 'Defensive column preparation';
+  if (b.includes('number.from') || b.includes('text.from') || b.includes('date.from')) return 'Safe value conversion';
+  if (b.startsWith('{') || b.startsWith('[')) return 'Configuration list';
+  return 'Transformation';
+}
+
+function inferExplanation(name: string, body: string, stepType: string): string {
+  const b = body.toLowerCase();
+  const n = name;
+  if (stepType === 'Source connector') {
+    if (b.includes('.csv') || b.includes('csv.document')) return `Loads a CSV file from disk into Power Query as a raw binary table.`;
+    if (b.includes('.xlsx') || b.includes('excel.workbook')) return `Loads an Excel file from disk. Columns are available after header promotion.`;
+    if (b.includes('sql.database')) return `Connects to a SQL Server database and retrieves a table or query result.`;
+    return `Connects to an external data source and loads the raw data.`;
+  }
+  if (stepType === 'Header promotion') return `Promotes the first row of the table to column headers so the data is properly named.`;
+  if (stepType === 'Table combine / union') return `Vertically combines multiple tables (UNION ALL equivalent). All rows from each source are stacked into one table.`;
+  if (stepType === 'Table join') return `Performs a Left Outer Join to enrich the main table with matching rows from a lookup table.`;
+  if (stepType === 'Column expansion') return `Expands nested table columns from the join result so the lookup fields become flat columns.`;
+  if (stepType === 'Null / value replacement') return `Replaces null or missing values with a default fallback (e.g. "Unknown") to prevent blank handling issues downstream.`;
+  if (stepType === 'Calculated column') return `Creates a calculated field translated from a Qlik expression where safe. Unsupported Qlik functions are approximated.`;
+  if (stepType === 'Inline / static table') return `Creates a static table from Qlik INLINE rows using a safe #table expression. Columns in brackets below.`;
+  if (stepType === 'Defensive column preparation') return `Ensures expected columns exist before joins or type conversion, preventing refresh failures on missing fields.`;
+  if (stepType === 'Safe value conversion') return `Converts values using try/otherwise null so bad source values do not break refresh. Column list below.`;
+  if (stepType === 'Data type enforcement') return `Applies the user-reviewed Power BI data types using Table.TransformColumnTypes. This is the authoritative typed output step.`;
+  if (stepType === 'Safe type filter') return `Dynamically filters the type-cast list to only columns that actually exist in the table, preventing "column not found" errors.`;
+  if (stepType === 'Configuration list') return `Defines a configuration list (type definitions or column metadata) used by a subsequent step.`;
+  return `Applies a "${n}" transformation step to the data pipeline.`;
+}
+
+function extractColumnsFromBody(body: string): string[] {
+  const cols: string[] = [];
+  // Match {"ColName", ...} pattern used in TransformColumnTypes, ExpandTableColumn etc.
+  const bracePattern = /\{\s*"([^"]+)"\s*,/g;
+  let m: RegExpExecArray | null;
+  while ((m = bracePattern.exec(body)) !== null) cols.push(m[1]);
+  // Match "ColName" used in NestedJoin key lists
+  if (cols.length === 0) {
+    const quotedPattern = /"([A-Za-z_][A-Za-z0-9_]*)"/g;
+    while ((m = quotedPattern.exec(body)) !== null) cols.push(m[1]);
+  }
+  return [...new Set(cols)].slice(0, 10); // cap at 10
+}
+
+function parseMQuerySteps(mCode: string): MQueryStep[] {
+  if (!mCode) return [];
+  // Strip the outer let...in wrapper
+  const letMatch = mCode.match(/^\s*let\s+([\s\S]+?)\s+in\s+(\w+)\s*$/i);
+  if (!letMatch) return [];
+  const body = letMatch[1];
+  const finalStep = letMatch[2].trim();
+
+  // Split on step boundaries: newline + identifier + " ="
+  // We split cautiously to handle multi-line step bodies
+  const stepBlocks: { name: string; body: string }[] = [];
+  const stepSplitter = /\n\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/g;
+  const matches: { index: number; name: string }[] = [];
+
+  // Find all step start positions
+  let sm: RegExpExecArray | null;
+  while ((sm = stepSplitter.exec('\n' + body)) !== null) {
+    matches.push({ index: sm.index, name: sm[1] });
+  }
+
+  // Also handle the very first step (starts at pos 0)
+  const firstStepMatch = body.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/);
+  if (firstStepMatch) {
+    matches.unshift({ index: -1, name: firstStepMatch[1] });
+  }
+
+  // Extract body slices between step starts
+  const fullText = '\n' + body;
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index + 1; // +1 skips the \n we prepended
+    const end = i + 1 < matches.length ? matches[i + 1].index + 1 : fullText.length;
+    const rawSlice = fullText.slice(start, end).trim();
+    // Strip step name and leading "=" from rawSlice
+    const eqIdx = rawSlice.indexOf('=');
+    const stepBody = eqIdx !== -1 ? rawSlice.slice(eqIdx + 1).trim().replace(/,\s*$/, '') : rawSlice;
+    stepBlocks.push({ name: matches[i].name, body: stepBody });
+  }
+
+  // Filter out internal helper steps starting with underscore (_AllTypeDefs etc.) — merge their column info into parent
+  const steps: MQueryStep[] = [];
+  let pendingCols: string[] = [];
+
+  for (const { name, body: sb } of stepBlocks) {
+    if (name.startsWith('_')) {
+      pendingCols = [...pendingCols, ...extractColumnsFromBody(sb)];
+      continue;
+    }
+    const isComment = sb.startsWith('//');
+    if (isComment) continue;
+
+    const stepType = inferStepType(name, sb);
+    const cols = [...new Set([...extractColumnsFromBody(sb), ...pendingCols])].slice(0, 12);
+    pendingCols = [];
+
+    steps.push({
+      seq: steps.length + 1,
+      stepName: name,
+      stepType,
+      isFinalOutputStep: name === finalStep,
+      explanation: inferExplanation(name, sb, stepType),
+      columns: cols,
+    });
+  }
+
+  return steps;
+}
+
+const STEP_TYPE_COLORS: Record<string, string> = {
+  'Source connector': 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+  'Header promotion': 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+  'Table combine / union': 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+  'Table join': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+  'Column expansion': 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+  'Calculated column': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  'Data type enforcement': 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  'Safe type filter': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  'Defensive column preparation': 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  'Safe value conversion': 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+  'Null / value replacement': 'bg-teal-500/10 text-teal-400 border-teal-500/20',
+  'Configuration list': 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  'Inline / static table': 'bg-lime-500/10 text-lime-400 border-lime-500/20',
+};
+
+function StepTypeBadge({ type }: { type: string }) {
+  const cls = STEP_TYPE_COLORS[type] || 'bg-primary/10 text-primary border-primary/20';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-semibold tracking-wide whitespace-nowrap ${cls}`}>
+      {type}
+    </span>
+  );
+}
+
+function MQueryStepTable({ mCode }: { mCode: string }) {
+  const steps = parseMQuerySteps(mCode);
+  const [expanded, setExpanded] = useState(true);
+  const [search, setSearch] = useState('');
+
+  const [exportHover, setExportHover] = useState(false);
+
+  const filtered = search
+    ? steps.filter(s =>
+        s.stepName.toLowerCase().includes(search.toLowerCase()) ||
+        s.stepType.toLowerCase().includes(search.toLowerCase()) ||
+        s.explanation.toLowerCase().includes(search.toLowerCase())
+      )
+    : steps;
+
+  const handleExportCsv = () => {
+    const header = 'Seq,Step Name,Step Type,Final Output Step,Explanation,Columns';
+    const rows = steps.map(s =>
+      [
+        s.seq,
+        `"${s.stepName}"`,
+        `"${s.stepType}"`,
+        s.isFinalOutputStep ? 'Yes' : 'No',
+        `"${s.explanation.replace(/"/g, '""')}"`,
+        `"${s.columns.join(', ')}"`,
+      ].join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = 'mquery-step-explanation.csv';
+    a.click();
+  };
+
+  if (steps.length === 0) return null;
+
+  return (
+    <div className="mt-4 border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-surface-elevated border-b border-border">
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center gap-2 text-sm font-semibold text-foreground hover:text-primary transition-colors"
+        >
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          M Query Step Explanation
+          <span className="ml-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-bold">{steps.length} steps</span>
+        </button>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search steps..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="px-2 py-1 text-xs rounded border border-border bg-surface focus:border-primary outline-none w-36"
+          />
+          <button
+            onClick={handleExportCsv}
+            onMouseEnter={() => setExportHover(true)}
+            onMouseLeave={() => setExportHover(false)}
+            title="Export as CSV"
+            className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border bg-surface hover:bg-surface-elevated transition-colors"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportHover && <span>CSV</span>}
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead className="bg-surface-elevated sticky top-0 z-10">
+              <tr className="border-b border-border text-muted-foreground">
+                <th className="py-2.5 px-3 font-semibold text-left w-10">Seq</th>
+                <th className="py-2.5 px-3 font-semibold text-left w-44">Step Name</th>
+                <th className="py-2.5 px-3 font-semibold text-left w-44">Step Type</th>
+                <th className="py-2.5 px-3 font-semibold text-center w-32">Final Output Step</th>
+                <th className="py-2.5 px-3 font-semibold text-left">Explanation</th>
+                <th className="py-2.5 px-3 font-semibold text-left w-52">Columns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s, i) => (
+                <tr
+                  key={s.stepName}
+                  className={cn(
+                    'border-b border-border/50 transition-colors',
+                    s.isFinalOutputStep
+                      ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                      : i % 2 === 0 ? 'bg-surface hover:bg-surface-elevated/40' : 'bg-surface-elevated/20 hover:bg-surface-elevated/50'
+                  )}
+                >
+                  <td className="py-2 px-3 text-muted-foreground font-mono">{s.seq}</td>
+                  <td className="py-2 px-3">
+                    <code className="font-mono text-[11px] text-foreground/90 bg-surface-elevated px-1.5 py-0.5 rounded">{s.stepName}</code>
+                  </td>
+                  <td className="py-2 px-3"><StepTypeBadge type={s.stepType} /></td>
+                  <td className="py-2 px-3 text-center">
+                    {s.isFinalOutputStep ? (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-amber-500/20 border border-amber-500/40">
+                        <Check className="h-3 w-3 text-amber-500" />
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded border border-border bg-surface" />
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-muted-foreground leading-relaxed max-w-xs">{s.explanation}</td>
+                  <td className="py-2 px-3">
+                    {s.columns.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {s.columns.map(c => (
+                          <span key={c} className="px-1.5 py-0.5 rounded bg-primary/8 border border-primary/15 text-primary/80 text-[10px] font-mono whitespace-nowrap">{c}</span>
+                        ))}
+                      </div>
+                    ) : <span className="text-muted-foreground/50">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && (
+            <p className="text-xs text-muted-foreground italic px-4 py-3">No steps match your search.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
 // TAB 5 — M Query & Data Types
 // ────────────────────────────────────────────────────────────────
 
@@ -655,7 +949,12 @@ function TabMQueryDataTypes({
                 </button>
               ))}
             </div>
-            {tables[activeTable] && <CodeBlock code={mq[tables[activeTable]] || ""} />}
+            {tables[activeTable] && (
+              <>
+                <CodeBlock code={mq[tables[activeTable]] || ""} />
+                <MQueryStepTable mCode={mq[tables[activeTable]] || ""} />
+              </>
+            )}
           </>
         )}
       </div>
