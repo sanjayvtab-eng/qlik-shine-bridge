@@ -1,19 +1,19 @@
 // EnterpriseExportPage - used in /app/semantic-model dedicated route
 import type { EnterpriseAnalysis } from "@/lib/migration/enterprise-parser";
 import { TabSemanticModel, TabValidation, TabPbipExport } from "./EnterpriseAnalysisPanel";
-
+import { Stage6Model } from "./stages/Stage6Model";
 interface Props {
   analysis: EnterpriseAnalysis;
 }
 
 export function EnterpriseExportPage({ analysis }: Props) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      <div>
+        <Stage6Model />
+      </div>
+      
       <div className="surface-card p-4">
-        <h3 className="font-display font-semibold text-lg text-foreground mb-1">Semantic Model &amp; Relationships</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Star-schema model inferred from your Qlik scripts. Review relationships before export.
-        </p>
         <TabSemanticModel analysis={analysis} />
       </div>
       <div className="surface-card p-4">
