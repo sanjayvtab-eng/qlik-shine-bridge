@@ -18,7 +18,7 @@ import {
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
-import { generatePbixFile } from "@/lib/migration/pbit-generator";
+
 import { generatePbipZip } from "@/lib/migration/pbip-generator";
 import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
 
@@ -922,17 +922,6 @@ export function TabMQueryDataTypes({
     a.click();
   };
 
-  const handleDownloadPbix = async () => {
-    try {
-      const blob = await generatePbixFile(analysis, "QLIK2PBI_M_Queries");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "QLIK2PBI_M_Queries.pbix";
-      a.click();
-    } catch (e) {
-      alert("Failed to generate .pbix file: " + (e as Error).message);
-    }
-  };
 
   const handleDownloadPbipZip = async () => {
     try {
@@ -967,9 +956,7 @@ export function TabMQueryDataTypes({
                 <button onClick={downloadAll} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated">
                   <Download className="h-3.5 w-3.5" /> Download (.txt)
                 </button>
-                <button onClick={handleDownloadPbix} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#F2C811]/10 border border-[#F2C811]/40 text-[#d4a800] dark:text-[#F2C811] text-xs font-semibold hover:bg-[#F2C811]/20 transition-colors">
-                  <Package className="h-3.5 w-3.5" /> Open in Power BI (.pbix)
-                </button>
+
                 <button onClick={handleDownloadPbipZip} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/40 text-primary text-xs font-semibold hover:bg-primary/20 transition-colors">
                   <Package className="h-3.5 w-3.5" /> Download PBIP (.zip)
                 </button>
@@ -1239,20 +1226,7 @@ export function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
   const [name, setName] = useState("QLIK2PBI_Migration_Project");
   const [exporting, setExporting] = useState(false);
 
-  const handleDownloadPbix = async () => {
-    try {
-      setExporting(true);
-      const blob = await generatePbixFile(analysis, name);
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${name}.pbix`;
-      a.click();
-    } catch (e) {
-      alert("Failed to generate .pbix file: " + (e as Error).message);
-    } finally {
-      setExporting(false);
-    }
-  };
+
 
   const handleDownloadPbipZip = async () => {
     try {
@@ -1314,14 +1288,7 @@ export function TabPbipExport({ analysis }: { analysis: EnterpriseAnalysis }) {
       <div className="surface-card p-4 space-y-3">
         <SectionHeader title="Downloads" sub="Export your migration artifacts" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button onClick={handleDownloadPbix} disabled={exporting}
-            className="flex items-center gap-2 px-4 py-3 rounded-xl border border-[#F2C811]/40 bg-[#F2C811]/10 text-sm font-medium hover:bg-[#F2C811]/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            <Package className="h-5 w-5 text-[#d4a800] dark:text-[#F2C811]" />
-            <div className="text-left">
-              <div className="font-semibold text-[#d4a800] dark:text-[#F2C811]">{exporting ? "Generating..." : "Open in Power BI (.pbix)"}</div>
-              <div className="text-xs text-[#d4a800]/70 dark:text-[#F2C811]/70">Double-click to load M queries + DAX instantly</div>
-            </div>
-          </button>
+
           
           <button onClick={handleDownloadPbipZip} disabled={exporting}
             className="flex items-center gap-2 px-4 py-3 rounded-xl border border-primary/40 bg-primary/10 text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
