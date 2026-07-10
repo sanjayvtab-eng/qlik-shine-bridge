@@ -16,6 +16,11 @@ export interface ExtractedFile {
   parsedAsText: boolean;
 }
 
+export interface AutoAssignedFiles {
+  sources: ExtractedFile[];
+  etls: ExtractedFile[];
+}
+
 interface Props {
   onFiles: (files: ExtractedFile[]) => void;
 }
@@ -45,6 +50,59 @@ function getFileIcon(ext: string) {
     case ".sql": return Database;
     default:     return FileText;
   }
+}
+
+function getSourceScore(file: ExtractedFile) {
+  const path = file.path.toLowerCase();
+  const text = (file.text ?? "").slice(0, 12000).toLowerCase();
+  let score = 0;
+  if (/(^|[/\\])(source|sources|extract|extraction|input|inputs|landing|raw|qvd|connector|connectors|metadata)([/\\]|_|-|\.|$)/i.test(file.path)) score += 6;
+  if (/\b(from|lib connect to|odbc connect|ole db|sql select|load\s+\*\s+from|resident)\b/i.test(text)) score += 3;
+  if (/\.(csv|tsv|json|xml|xlsx?)$/.test(path)) score += 4;
+  if (/\b(transform|transformation|etl|model|fact|dim|calendar|mapping|aggregate|join|concatenate|applymap|intervalmatch)\b/i.test(file.path)) score -= 3;
+  return score;
+}
+
+function getEtlScore(file: ExtractedFile) {
+  const path = file.path.toLowerCase();
+  const text = (file.text ?? "").slice(0, 12000).toLowerCase();
+  let score = 0;
+  if (/\b(etl|transform|transformation|model|fact|dimension|dim|calendar|mapping|aggregate|mart|staging|final)\b/i.test(file.path)) score += 6;
+  if (/\b(resident|join|left join|inner join|concatenate|applymap|group by|where exists|intervalmatch|drop table|store\s+.+into)\b/i.test(text)) score += 4;
+  if (/\.(qvs|sql|py|js|ts)$/.test(path)) score += 2;
+  if (/\b(source|sources|extract|extraction|input|raw|connector|metadata)\b/i.test(file.path)) score -= 2;
+  return score;
+}
+
+export function autoAssignSourceAndEtl(files: ExtractedFile[]): AutoAssignedFiles {
+  const assignableFiles = files.filter((f) => f.parsedAsText);
+  const qvsFiles = assignableFiles.filter((f) => f.extension?.toLowerCase() === ".qvs");
+  const candidates = qvsFiles.length > 0 ? qvsFiles : assignableFiles;
+
+  if (candidates.length === 0) return { sources: [], etls: [] };
+  if (candidates.length === 1) return { sources: [candidates[0]], etls: [candidates[0]] };
+
+  const sources = candidates.filter((file) => {
+    const text = (file.text ?? "").slice(0, 12000);
+    return /(^|[/\\]|_|-|\.)(extract|extraction|config|configuration)([/\\]|_|-|\.|$)/i.test(file.path)
+      || /\b(extract|extraction|config|configuration|lib connect to|odbc connect|ole db|sql select|load\s+\*\s+from)\b/i.test(text);
+  });
+  const etls = candidates.filter((file) => !sources.some((source) => source.path === file.path));
+
+  if (sources.length > 0 && etls.length > 0) return { sources, etls };
+
+  const scored = candidates.map((file, index) => ({
+    file,
+    index,
+    sourceScore: getSourceScore(file),
+    etlScore: getEtlScore(file),
+  }));
+
+  const rankedSources = [...scored].sort((a, b) => b.sourceScore - a.sourceScore || a.index - b.index);
+  const source = rankedSources[0].file;
+  const remaining = candidates.filter((file) => file.path !== source.path);
+
+  return { sources: [source], etls: remaining };
 }
 
 // Animated counter hook

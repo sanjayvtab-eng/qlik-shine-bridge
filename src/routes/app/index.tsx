@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMigration } from "@/lib/migration/store";
-import { MultiFileDropzone, FileAnalysisPanel } from "@/components/migration/MultiFileDropzone";
+import { MultiFileDropzone, FileAnalysisPanel, autoAssignSourceAndEtl } from "@/components/migration/MultiFileDropzone";
 import type { ExtractedFile } from "@/components/migration/MultiFileDropzone";
 import { analyzeQvsScriptsViaAi } from "@/lib/migration/gemini";
 import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
@@ -40,18 +40,9 @@ function UploadPage() {
     setSelectedSources([]);
     setSelectedEtls([]);
 
-    // Auto-assign
-    const textFiles = files.filter((f) => f.parsedAsText);
-    const qvsFiles = textFiles.filter((f) => f.extension === ".qvs");
-    const pool = qvsFiles.length >= 2 ? qvsFiles : textFiles;
-    if (pool.length >= 2) {
-      const src = pool.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? pool[0];
-      const etl = pool.find((f) => f.path !== src.path) ?? pool[1];
-      setSelectedSources([src]);
-      setSelectedEtls([etl]);
-    } else if (pool.length === 1) {
-      setSelectedSources([pool[0]]);
-    }
+    const autoAssigned = autoAssignSourceAndEtl(files);
+    setSelectedSources(autoAssigned.sources);
+    setSelectedEtls(autoAssigned.etls);
   };
 
   const handleRunScriptAnalysis = async () => {

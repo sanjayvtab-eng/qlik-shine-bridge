@@ -5,7 +5,7 @@ import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
 import type { MigrationValidationReport } from "@/lib/migration/types";
 import { cn } from "@/lib/utils";
-import { MultiFileDropzone, FileAnalysisPanel } from "../MultiFileDropzone";
+import { MultiFileDropzone, FileAnalysisPanel, autoAssignSourceAndEtl } from "../MultiFileDropzone";
 import type { ExtractedFile } from "../MultiFileDropzone";
 import { EnterpriseAnalysisPanel } from "../EnterpriseAnalysisPanel";
 import { Loader2, ShieldCheck, Database, AlertCircle, Check, PackageOpen, Lock, ArrowRight } from "lucide-react";
@@ -31,33 +31,9 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     setSelectedSources([]);
     setSelectedEtls([]);
 
-    // Proactive auto-assignment: only detect .qvs files for auto-assignment
-    const qvsFiles = files.filter((f) => f.extension?.toLowerCase() === ".qvs" && f.parsedAsText);
-
-    if (qvsFiles.length > 0) {
-      if (qvsFiles.length === 1) {
-        // If only one QVS file is uploaded, assume it contains both extraction and transformation logic
-        setSelectedSources([qvsFiles[0]]);
-        setSelectedEtls([qvsFiles[0]]);
-      } else {
-        // Use f.path instead of f.name so folder names (e.g. '02_transform/', '03_model/') are checked
-        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform|model)/i.test(f.path));
-        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform|model)/i.test(f.path));
-        
-        console.log(`Auto-assign matches: ${likelySources.length} sources, ${likelyEtls.length} ETLs found by path.`);
-
-        if (likelySources.length > 0 && likelyEtls.length > 0) {
-          setSelectedSources(likelySources);
-          setSelectedEtls(likelyEtls);
-        } else {
-          // If we couldn't differentiate, just put the first half in source and second half in etl as a fallback, 
-          // or just put the first one in source and rest in etl.
-          // The user can manually toggle them.
-          setSelectedSources([qvsFiles[0]]);
-          setSelectedEtls(qvsFiles.slice(1));
-        }
-      }
-    }
+    const autoAssigned = autoAssignSourceAndEtl(files);
+    setSelectedSources(autoAssigned.sources);
+    setSelectedEtls(autoAssigned.etls);
   };
 
   const handleRunScriptAnalysis = async () => {
