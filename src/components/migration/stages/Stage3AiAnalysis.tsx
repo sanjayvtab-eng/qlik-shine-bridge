@@ -31,18 +31,26 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
     setSelectedSources([]);
     setSelectedEtls([]);
 
-    // Proactive auto-assignment: prefer .qvs files, fall back to any text file
-    const textFiles = files.filter((f) => f.parsedAsText);
-    const qvsFiles  = textFiles.filter((f) => f.extension === ".qvs");
-    const pool      = qvsFiles.length >= 2 ? qvsFiles : textFiles;
+    // Proactive auto-assignment: only detect .qvs files for auto-assignment
+    const qvsFiles = files.filter((f) => f.extension?.toLowerCase() === ".qvs" && f.parsedAsText);
 
-    if (pool.length >= 2) {
-      const src = pool.find((f) => !/(etl|main|fact|transform)/i.test(f.name)) ?? pool[0];
-      const etl = pool.find((f) => f.path !== src.path) ?? pool[1];
-      setSelectedSources([src]);
-      setSelectedEtls([etl]);
-    } else if (pool.length === 1) {
-      setSelectedSources([pool[0]]);
+    if (qvsFiles.length > 0) {
+      if (qvsFiles.length === 1) {
+        // If only one QVS file is uploaded, assume it contains both extraction and transformation logic
+        setSelectedSources([qvsFiles[0]]);
+        setSelectedEtls([qvsFiles[0]]);
+      } else {
+        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform)/i.test(f.name));
+        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform)/i.test(f.name));
+
+        if (likelySources.length > 0 && likelyEtls.length > 0) {
+          setSelectedSources(likelySources);
+          setSelectedEtls(likelyEtls);
+        } else {
+          setSelectedSources([qvsFiles[0]]);
+          setSelectedEtls(qvsFiles.slice(1));
+        }
+      }
     }
   };
 
