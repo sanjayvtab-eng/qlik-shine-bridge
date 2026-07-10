@@ -216,7 +216,7 @@ function UploadPage() {
               <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">DAX Requirements</div>
             </div>
             <div className="p-4 rounded-xl bg-surface/50 border border-border">
-              <div className="text-2xl font-black mb-1 gradient-text">{validationReport.overallScore || 0}/100</div>
+              <div className="text-2xl font-black mb-1 gradient-text">{Math.max(0, 100 - (validationReport.issues?.length || 0) * 5)}/100</div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Confidence</div>
             </div>
           </div>

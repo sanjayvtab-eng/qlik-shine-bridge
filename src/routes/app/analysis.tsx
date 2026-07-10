@@ -4,6 +4,7 @@ import { useMigration } from "@/lib/migration/store";
 import { runEnterpriseAnalysis, rowsToUpdates } from "@/lib/migration/enterprise-parser";
 import type { EnterpriseAnalysis } from "@/lib/migration/enterprise-parser";
 import { Database, Loader2, AlertCircle, RefreshCw, ArrowRight, Check, ArrowLeft } from "lucide-react";
+import { TabSourceMapping } from "@/components/migration/EnterpriseAnalysisPanel";
 
 export const Route = createFileRoute("/app/analysis")({
   component: AnalysisPage,
@@ -201,60 +202,14 @@ function AnalysisPage() {
         </div>
       </div>
 
-      {/* Source Mapping Summary */}
-      <div className="surface-card p-4">
-        <h4 className="font-display font-semibold text-base text-foreground mb-3">Source Mapping Overview</h4>
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          <div className="surface-card p-3 flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Physical Sources</span>
-            <span className="text-xl font-bold">{enterpriseMappingRows.filter(m => !m.bypassQvd).length}</span>
-          </div>
-          <div className="surface-card p-3 flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">QVDs Bypassed</span>
-            <span className="text-xl font-bold">{enterpriseMappingRows.filter(m => m.bypassQvd).length}</span>
-          </div>
-          <div className="surface-card p-3 flex flex-col gap-1">
-            <span className="text-xs text-muted-foreground">Needs Review</span>
-            <span className="text-xl font-bold">{enterpriseMappingRows.filter(m => !m.bypassQvd && m.status !== "Mapped").length}</span>
-          </div>
-        </div>
-        <div className="overflow-auto rounded-xl border border-border max-h-64">
-          <table className="w-full text-xs">
-            <thead className="bg-surface-elevated border-b border-border">
-              <tr>
-                {["Table", "Original Ref", "Connector", "Status", "Bypass"].map(h => (
-                  <th key={h} className="px-3 py-2 text-left font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {enterpriseMappingRows.map((row, i) => (
-                <tr key={i} className="border-b border-border/30">
-                  <td className="px-3 py-1.5 text-foreground/70 max-w-[120px] truncate">{row.table}</td>
-                  <td className="px-3 py-1.5 font-mono text-foreground/80 max-w-[160px] truncate" title={row.originalRef}>{row.originalRef}</td>
-                  <td className="px-3 py-1.5">{row.connectorType}</td>
-                  <td className="px-3 py-1.5">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${row.status === "Mapped" ? "bg-green-500/10 text-green-400" : "bg-amber-500/10 text-amber-400"}`}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5">{row.bypassQvd ? <Check className="h-3.5 w-3.5 text-sky-400" /> : null}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={handleApplyMapping}
-            disabled={applying}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-xs font-medium hover:bg-surface-elevated disabled:opacity-50"
-          >
-            {applying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Apply Mapping &amp; Re-run
-          </button>
-        </div>
-      </div>
+      {/* Source Mapping Editor */}
+      <TabSourceMapping
+        analysis={analysis}
+        mappingRows={enterpriseMappingRows}
+        onMappingChange={setEnterpriseMappingRows}
+        onApply={handleApplyMapping}
+        applying={applying}
+      />
 
       {/* Final Tables List */}
       <div className="surface-card p-4">

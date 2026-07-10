@@ -189,7 +189,7 @@ function TabSummary({ analysis }: { analysis: EnterpriseAnalysis }) {
 // TAB 2 — Source Mapping Editor
 // ────────────────────────────────────────────────────────────────
 
-function TabSourceMapping({
+export function TabSourceMapping({
   analysis, mappingRows, onMappingChange, onApply, applying
 }: {
   analysis: EnterpriseAnalysis;
