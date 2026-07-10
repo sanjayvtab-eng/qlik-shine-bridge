@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMigration } from "@/lib/migration/store";
 import { Calendar, Layers, ArrowRight, RotateCcw } from "lucide-react";
 import type { FinalTable } from "@/lib/migration/types";
+import type { EnterpriseAnalysis } from "@/lib/migration/enterprise-parser";
 import { toast } from "sonner";
 
 function tableColor(t: FinalTable, variant: "qlik" | "pbi") {
@@ -23,8 +24,76 @@ function getSemanticKey(tableName: string) {
   return name.replace(/dim|fact|_final|s$/, "");
 }
 
-export function Stage6Model({ onNext }: { onNext?: () => void }) {
-  const { finalTables = [], relationships = [], setStageStatus } = useMigration();
+export function Stage6Model({ onNext, analysis }: { onNext?: () => void, analysis?: EnterpriseAnalysis }) {
+  const store = useMigration();
+  
+  const relationships = analysis?.relationships || store.relationships || [];
+  const setStageStatus = store.setStageStatus;
+
+  const finalTables = useMemo(() => {
+    let base: FinalTable[] = [];
+    const raw = analysis?.finalTables || store.finalTables || [];
+    
+    if (raw.length > 0) {
+      if ('table' in raw[0]) {
+        // It's a TableProfile[] from enterprise analysis
+        base = (raw as any[]).map(p => ({
+          id: p.table,
+          name: p.table,
+          type: p.classification || "Fact",
+          columns: p.fields?.map((f: string) => ({
+            name: f,
+            dataType: analysis?.columnTypes?.[p.table]?.[f] || "String"
+          })) || [],
+          keys: p.fields?.filter((f: string) => f.toLowerCase().endsWith("id")) || [],
+          sourceTables: [], isFinal: true, steps: [], lineage: []
+        }));
+      } else {
+        base = JSON.parse(JSON.stringify(raw)); // deep copy to allow mutations below
+      }
+    }
+
+    // Infer missing tables from relationships so the diagram can draw connections
+    const existingTableNames = new Set(base.map(t => t.name.toLowerCase()));
+    
+    relationships.forEach((r: any) => {
+      if (!existingTableNames.has(r.fromTable.toLowerCase())) {
+        base.push({
+          id: r.fromTable,
+          name: r.fromTable,
+          type: "Dimension", // assume dimension for missing linked tables
+          columns: [{ name: r.fromColumn, dataType: "String", derived: false }],
+          keys: [r.fromColumn],
+          sourceTables: [], isFinal: true, steps: [], lineage: []
+        } as any);
+        existingTableNames.add(r.fromTable.toLowerCase());
+      } else {
+        const tbl = base.find(t => t.name.toLowerCase() === r.fromTable.toLowerCase());
+        if (tbl && !tbl.columns.find(c => c.name.toLowerCase() === r.fromColumn.toLowerCase())) {
+          tbl.columns.push({ name: r.fromColumn, dataType: "String", derived: false });
+        }
+      }
+      
+      if (!existingTableNames.has(r.toTable.toLowerCase())) {
+        base.push({
+          id: r.toTable,
+          name: r.toTable,
+          type: "Dimension",
+          columns: [{ name: r.toColumn, dataType: "String", derived: false }],
+          keys: [r.toColumn],
+          sourceTables: [], isFinal: true, steps: [], lineage: []
+        } as any);
+        existingTableNames.add(r.toTable.toLowerCase());
+      } else {
+        const tbl = base.find(t => t.name.toLowerCase() === r.toTable.toLowerCase());
+        if (tbl && !tbl.columns.find(c => c.name.toLowerCase() === r.toColumn.toLowerCase())) {
+          tbl.columns.push({ name: r.toColumn, dataType: "String", derived: false });
+        }
+      }
+    });
+
+    return base;
+  }, [analysis, store.finalTables, relationships]);
 
   const allTables: FinalTable[] = useMemo(() => {
     const hasCalendar = finalTables.some((t) => t.type === "Calendar");

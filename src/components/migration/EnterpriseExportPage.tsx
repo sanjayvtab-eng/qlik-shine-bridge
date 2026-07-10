@@ -10,7 +10,7 @@ export function EnterpriseExportPage({ analysis }: Props) {
   return (
     <div className="space-y-8">
       <div>
-        <Stage6Model />
+        <Stage6Model analysis={analysis} />
       </div>
       
       <div className="surface-card p-4">
