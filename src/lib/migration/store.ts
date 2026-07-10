@@ -61,6 +61,7 @@ const initial: MigrationMetadata & {
   enterpriseMappingRows: any[];
   enterpriseColumnTypeEdits: Record<string, string>;
   enterpriseAiQueries: Record<string, string> | null;
+  uploadedFiles: any[];
 } = {
   sourceTables: [],
   etlOperations: [],
