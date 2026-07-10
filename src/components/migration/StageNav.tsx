@@ -2,21 +2,18 @@ import { Check } from "lucide-react";
 import { useMigration } from "@/lib/migration/store";
 import { cn } from "@/lib/utils";
 
+import { Link, useRouterState } from "@tanstack/react-router";
+
 export const STAGES = [
-  { id: 1, label: "Requirement" },
-  { id: 2, label: "Rule Book" },
-  { id: 3, label: "AI Analysis" },
-  { id: 4, label: "Power Query" },
-  { id: 5, label: "Semantic Model" },
-  { id: 6, label: "DAX Measures" },
+  { id: 1, label: "Upload & Extract", path: "/app" },
+  { id: 2, label: "Power Query", path: "/app/power-query" },
+  { id: 3, label: "Semantic Model", path: "/app/semantic-model" },
+  { id: 4, label: "DAX Measures", path: "/app/dax-measures" },
 ] as const;
 
-interface Props {
-  active: number;
-  onSelect: (n: number) => void;
-}
-
-export function StageNav({ active, onSelect }: Props) {
+export function StageNav() {
+  const router = useRouterState();
+  const currentPath = router.location.pathname;
   const status = useMigration((s) => s.stageStatus);
   const accuracy = useMigration((s) => s.stageAccuracy);
 
@@ -35,7 +32,7 @@ export function StageNav({ active, onSelect }: Props) {
             Migration Pipeline
           </div>
           <div className="font-display text-lg font-semibold mt-0.5">
-            {completed} of 6 stages complete
+            4 Stage Automated Conversion
           </div>
         </div>
         <div className="text-right">
@@ -48,19 +45,16 @@ export function StageNav({ active, onSelect }: Props) {
 
       <div className="relative">
         <div className="absolute top-5 left-0 right-0 h-[2px] bg-border" />
-        <div
-          className="absolute top-5 left-0 h-[2px] bg-primary transition-all"
-          style={{ width: `${(completed / 6) * 100}%` }}
-        />
-        <div className="relative grid grid-cols-6 gap-2">
+        <div className="relative flex justify-between gap-2 max-w-4xl mx-auto px-4">
           {STAGES.map((s) => {
-            const st = status[s.id];
-            const isActive = active === s.id;
+            const isActive = currentPath === s.path || (s.path === "/app" && currentPath === "/app/");
+            const st = status[s.id + 2]; // Map to original stage IDs for accuracy if needed
+            
             return (
-              <button
+              <Link
                 key={s.id}
-                onClick={() => onSelect(s.id)}
-                className="flex flex-col items-center gap-2 group"
+                to={s.path}
+                className="flex flex-col items-center gap-2 group w-24"
               >
                 <div
                   className={cn(
@@ -81,13 +75,13 @@ export function StageNav({ active, onSelect }: Props) {
                   >
                     {s.label}
                   </div>
-                  {accuracy[s.id] !== null && (
+                  {accuracy[s.id + 2] !== null && accuracy[s.id + 2] !== undefined && (
                     <div className="text-[10px] text-primary font-semibold mt-0.5">
-                      {accuracy[s.id]}%
+                      {accuracy[s.id + 2]}%
                     </div>
                   )}
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>

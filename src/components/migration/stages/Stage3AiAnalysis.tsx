@@ -21,10 +21,8 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   const [complete, setComplete] = useState(false);
   const [validationReport, setValidationReport] = useState<MigrationValidationReport | null>(null);
 
-  const hasRequirement = !!requirement;
-  const hasRuleBook    = !!ruleBookMd;
   const bothSelected   = selectedSources.length > 0 && selectedEtls.length > 0;
-  const canAnalyze     = hasRequirement && hasRuleBook && bothSelected;
+  const canAnalyze     = bothSelected;
 
   const handleFiles = (files: ExtractedFile[]) => {
     setAllFiles(files);
@@ -63,8 +61,10 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       const srcTables = parseSourceQvs(sourceText) || [];
       const etlRes = parseEtlQvs(etlText, srcTables);
 
-      // 2. Invoke structured semantic AI extraction
-      const aiResponse = await analyzeQvsScriptsViaAi(requirement, ruleBookMd, sourceText, etlText, { srcTables, etlRes });
+      // 2. Invoke structured semantic AI extraction with fallback strings for missing manual inputs
+      const safeReq = requirement || "Migrate Qlik to Power BI automatically.";
+      const safeRb = ruleBookMd || "# Rule Book\n- Extract metadata\n- Convert scripts\n";
+      const aiResponse = await analyzeQvsScriptsViaAi(safeReq, safeRb, sourceText, etlText, { srcTables, etlRes });
       const technicalMetadata = aiResponse.technicalMetadata;
 
       // 4. Validate the merged metadata
@@ -153,32 +153,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
-      {/* Prerequisites checklist */}
-      {(!hasRequirement || !hasRuleBook || !bothSelected) && (
-        <div className="surface-card p-5 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Lock className="h-4 w-4 text-amber-500" />
-            <span>Complete these steps to unlock analysis</span>
-          </div>
-          <div className="space-y-2">
-            {[
-              { done: hasRequirement, label: "Stage 1 — Fill in the business requirement form", step: 1 },
-              { done: hasRuleBook,    label: "Stage 2 — Generate the Rule Book",                step: 2 },
-              { done: bothSelected,   label: "Stage 3 — Assign at least one Source and one ETL file above", step: 3 },
-            ].map(({ done, label, step }) => (
-              <div key={step} className={`flex items-center gap-3 text-xs px-3 py-2 rounded-lg ${
-                done ? "bg-success/5 text-success border border-success/20" : "bg-amber-500/5 text-amber-600 border border-amber-400/20"
-              }`}>
-                {done
-                  ? <Check className="h-3.5 w-3.5 shrink-0" />
-                  : <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                }
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       {/* Analyse button */}
       <div className="surface-card p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">

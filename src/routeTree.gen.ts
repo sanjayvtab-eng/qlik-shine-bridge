@@ -11,6 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppSemanticModelRouteImport } from './routes/app/semantic-model'
+import { Route as AppPowerQueryRouteImport } from './routes/app/power-query'
+import { Route as AppDaxMeasuresRouteImport } from './routes/app/dax-measures'
 
 const AppRoute = AppRouteImport.update({
   id: '/app',
@@ -22,31 +26,80 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSemanticModelRoute = AppSemanticModelRouteImport.update({
+  id: '/semantic-model',
+  path: '/semantic-model',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPowerQueryRoute = AppPowerQueryRouteImport.update({
+  id: '/power-query',
+  path: '/power-query',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDaxMeasuresRoute = AppDaxMeasuresRouteImport.update({
+  id: '/dax-measures',
+  path: '/dax-measures',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
+  '/app': typeof AppRouteWithChildren
+  '/app/dax-measures': typeof AppDaxMeasuresRoute
+  '/app/power-query': typeof AppPowerQueryRoute
+  '/app/semantic-model': typeof AppSemanticModelRoute
+  '/app/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
+  '/app/dax-measures': typeof AppDaxMeasuresRoute
+  '/app/power-query': typeof AppPowerQueryRoute
+  '/app/semantic-model': typeof AppSemanticModelRoute
+  '/app': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/app': typeof AppRoute
+  '/app': typeof AppRouteWithChildren
+  '/app/dax-measures': typeof AppDaxMeasuresRoute
+  '/app/power-query': typeof AppPowerQueryRoute
+  '/app/semantic-model': typeof AppSemanticModelRoute
+  '/app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/app/dax-measures'
+    | '/app/power-query'
+    | '/app/semantic-model'
+    | '/app/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app'
-  id: '__root__' | '/' | '/app'
+  to:
+    | '/'
+    | '/app/dax-measures'
+    | '/app/power-query'
+    | '/app/semantic-model'
+    | '/app'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/app/dax-measures'
+    | '/app/power-query'
+    | '/app/semantic-model'
+    | '/app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRoute
+  AppRoute: typeof AppRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +118,56 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/semantic-model': {
+      id: '/app/semantic-model'
+      path: '/semantic-model'
+      fullPath: '/app/semantic-model'
+      preLoaderRoute: typeof AppSemanticModelRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/power-query': {
+      id: '/app/power-query'
+      path: '/power-query'
+      fullPath: '/app/power-query'
+      preLoaderRoute: typeof AppPowerQueryRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/dax-measures': {
+      id: '/app/dax-measures'
+      path: '/dax-measures'
+      fullPath: '/app/dax-measures'
+      preLoaderRoute: typeof AppDaxMeasuresRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppDaxMeasuresRoute: typeof AppDaxMeasuresRoute
+  AppPowerQueryRoute: typeof AppPowerQueryRoute
+  AppSemanticModelRoute: typeof AppSemanticModelRoute
+  AppIndexRoute: typeof AppIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppDaxMeasuresRoute: AppDaxMeasuresRoute,
+  AppPowerQueryRoute: AppPowerQueryRoute,
+  AppSemanticModelRoute: AppSemanticModelRoute,
+  AppIndexRoute: AppIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AppRoute: AppRoute,
+  AppRoute: AppRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,48 +2,35 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppHeader } from "@/components/migration/AppHeader";
 import { StageNav, STAGES } from "@/components/migration/StageNav";
-import { Stage1Requirement } from "@/components/migration/stages/Stage1Requirement";
-import { Stage2RuleBook } from "@/components/migration/stages/Stage2RuleBook";
-import { Stage3AiAnalysis } from "@/components/migration/stages/Stage3AiAnalysis";
-import { Stage4PowerQuery } from "@/components/migration/stages/Stage4PowerQuery";
-import { Stage5Dax } from "@/components/migration/stages/Stage5Dax";
-import { Stage6Model } from "@/components/migration/stages/Stage6Model";
+
 import { useMigration } from "@/lib/migration/store";
+
+import { Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
     meta: [
       { title: "VTAB Square — Qlik to Power BI Migration" },
-      { name: "description", content: "AI-assisted Qlik to Power BI migration. Requirement → Rule Book → AI Analysis → Power Query → DAX → Semantic Model." },
-      { property: "og:title", content: "VTAB Square — Qlik to Power BI Migration" },
-      { property: "og:description", content: "AI-assisted Qlik to Power BI migration with centralised metadata, Power Query, DAX and semantic model generation." },
+      { name: "description", content: "AI-assisted Qlik to Power BI migration." },
     ],
   }),
-  component: Migration,
+  component: MigrationLayout,
 });
 
-function Migration() {
-  const [active, setActive] = useState(1);
+function MigrationLayout() {
   const { sourceTables, finalTables } = useMigration();
   const accuracy = useMigration((s) => s.stageAccuracy);
   const overallVals = Object.values(accuracy).filter((a): a is number => typeof a === "number");
   const overall = overallVals.length ? Math.round(overallVals.reduce((a, b) => a + b, 0) / overallVals.length) : null;
-
-  const next = () => setActive((n) => Math.min(6, n + 1));
 
   return (
     <div className="min-h-screen">
       <AppHeader />
       <main className="mx-auto max-w-7xl px-6 pt-10 pb-20">
         <Hero overall={overall} sourceCount={sourceTables.length} finalCount={finalTables.length} />
-        <StageNav active={active} onSelect={setActive} />
+        <StageNav />
 
-        {active === 1 && <Stage1Requirement onNext={next} />}
-        {active === 2 && <Stage2RuleBook onNext={next} />}
-        {active === 3 && <Stage3AiAnalysis onNext={next} />}
-        {active === 4 && <Stage4PowerQuery onNext={next} />}
-        {active === 5 && <Stage6Model onNext={next} />}
-        {active === 6 && <Stage5Dax />}
+        <Outlet />
 
         <FooterSteps />
       </main>
