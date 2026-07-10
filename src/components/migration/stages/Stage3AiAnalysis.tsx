@@ -40,9 +40,11 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         setSelectedSources([qvsFiles[0]]);
         setSelectedEtls([qvsFiles[0]]);
       } else {
-        // Use f.path instead of f.name so folder names (e.g. '02_transform/') are checked
-        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform)/i.test(f.path));
-        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform)/i.test(f.path));
+        // Use f.path instead of f.name so folder names (e.g. '02_transform/', '03_model/') are checked
+        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform|model)/i.test(f.path));
+        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform|model)/i.test(f.path));
+        
+        console.log(`Auto-assign matches: ${likelySources.length} sources, ${likelyEtls.length} ETLs found by path.`);
 
         if (likelySources.length > 0 && likelyEtls.length > 0) {
           setSelectedSources(likelySources);
