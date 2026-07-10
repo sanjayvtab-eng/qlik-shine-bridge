@@ -1414,15 +1414,17 @@ const TABS = [
   { id: "logs",        label: "Logs / JSON",    icon: Braces },
 ];
 
-export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: ExtractedFile[], onAnalysisComplete: () => void }) {
-  const [analysis, setAnalysis] = useState<EnterpriseAnalysis | null>(null);
+export function EnterpriseAnalysisPanel({ files, onAnalysisComplete, activeTabOverride }: { files: ExtractedFile[], onAnalysisComplete?: () => void, activeTabOverride?: string }) {
+  const { 
+    enterpriseAnalysis: analysis, setEnterpriseAnalysis: setAnalysis,
+    enterpriseMappingRows: mappingRows, setEnterpriseMappingRows: setMappingRows 
+  } = useMigration();
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("summary");
   const [completedStages, setCompletedStages] = useState<Set<string>>(new Set());
 
-  // Mapping state
-  const [mappingRows, setMappingRows] = useState<MappingRow[]>([]);
+  // Mapping state comes from store now
   const [mappingUpdates, setMappingUpdates] = useState<Record<string, { mappedRef?: string; connectorType?: string; status?: string; notes?: string }>>({});
   const [applying, setApplying] = useState(false);
 
@@ -1444,7 +1446,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
         status: m.status, notes: m.notes, table: m.table, sourceRole: m.sourceRole,
         bypassQvd: m.bypassQvd, effectiveRef: m.effectiveRef, qvdProducerTable: m.qvdProducerTable,
       })));
-      onAnalysisComplete();
+      if (onAnalysisComplete) onAnalysisComplete();
       return result;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Enterprise analysis failed.");
@@ -1528,6 +1530,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
   return (
     <div className="space-y-4">
       {/* Header bar */}
+      {!activeTabOverride && (
       <div className="surface-card p-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent">
@@ -1544,16 +1547,18 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
           <RefreshCw className="h-3.5 w-3.5" /> Re-run
         </button>
       </div>
+      )}
 
       {/* Vertical Stepper / Accordion Wizard */}
       <div className="flex flex-col gap-3">
-        {TABS.map(({ id, label, icon: Icon }, index) => {
-          const isExpanded = activeTab === id;
+        {TABS.filter(t => !activeTabOverride || t.id === activeTabOverride).map(({ id, label, icon: Icon }, index) => {
+          const isExpanded = activeTabOverride ? true : activeTab === id;
           const isCompleted = completedStages.has(id);
           
           return (
             <div key={id} className={cn("surface-card rounded-xl border transition-all", isExpanded ? "border-primary/50 shadow-md ring-1 ring-primary/20" : "border-border hover:border-border/80")}>
               {/* Accordion Header */}
+              {!activeTabOverride && (
               <button 
                 onClick={() => setActiveTab(isExpanded ? "" : id)}
                 className="w-full flex items-center justify-between p-4 focus:outline-none"
@@ -1573,6 +1578,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
                   {isExpanded ? <ChevronDown className="h-5 w-5 text-muted-foreground" /> : <ChevronRight className="h-5 w-5 text-muted-foreground" />}
                 </div>
               </button>
+              )}
 
               {/* Accordion Content */}
               {isExpanded && (
@@ -1591,6 +1597,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
                   </div>
                   
                   {/* Footer Action */}
+                  {!activeTabOverride && (
                   <div className="flex justify-end pt-4 border-t border-border mt-4">
                     <button 
                       onClick={() => {
@@ -1610,6 +1617,7 @@ export function EnterpriseAnalysisPanel({ files, onAnalysisComplete }: { files: 
                       {index < TABS.length - 1 ? "Mark Complete & Continue" : "Finish Review"}
                     </button>
                   </div>
+                  )}
                 </div>
               )}
             </div>

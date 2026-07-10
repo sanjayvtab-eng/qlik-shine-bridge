@@ -15,6 +15,7 @@ import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppSemanticModelRouteImport } from './routes/app/semantic-model'
 import { Route as AppPowerQueryRouteImport } from './routes/app/power-query'
 import { Route as AppDaxMeasuresRouteImport } from './routes/app/dax-measures'
+import { Route as AppAnalysisRouteImport } from './routes/app/analysis'
 
 const AppRoute = AppRouteImport.update({
   id: '/app',
@@ -46,10 +47,16 @@ const AppDaxMeasuresRoute = AppDaxMeasuresRouteImport.update({
   path: '/dax-measures',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAnalysisRoute = AppAnalysisRouteImport.update({
+  id: '/analysis',
+  path: '/analysis',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/analysis': typeof AppAnalysisRoute
   '/app/dax-measures': typeof AppDaxMeasuresRoute
   '/app/power-query': typeof AppPowerQueryRoute
   '/app/semantic-model': typeof AppSemanticModelRoute
@@ -57,6 +64,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/app/analysis': typeof AppAnalysisRoute
   '/app/dax-measures': typeof AppDaxMeasuresRoute
   '/app/power-query': typeof AppPowerQueryRoute
   '/app/semantic-model': typeof AppSemanticModelRoute
@@ -66,6 +74,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
+  '/app/analysis': typeof AppAnalysisRoute
   '/app/dax-measures': typeof AppDaxMeasuresRoute
   '/app/power-query': typeof AppPowerQueryRoute
   '/app/semantic-model': typeof AppSemanticModelRoute
@@ -76,6 +85,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/app'
+    | '/app/analysis'
     | '/app/dax-measures'
     | '/app/power-query'
     | '/app/semantic-model'
@@ -83,6 +93,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/app/analysis'
     | '/app/dax-measures'
     | '/app/power-query'
     | '/app/semantic-model'
@@ -91,6 +102,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/app'
+    | '/app/analysis'
     | '/app/dax-measures'
     | '/app/power-query'
     | '/app/semantic-model'
@@ -146,10 +158,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDaxMeasuresRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/analysis': {
+      id: '/app/analysis'
+      path: '/analysis'
+      fullPath: '/app/analysis'
+      preLoaderRoute: typeof AppAnalysisRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAnalysisRoute: typeof AppAnalysisRoute
   AppDaxMeasuresRoute: typeof AppDaxMeasuresRoute
   AppPowerQueryRoute: typeof AppPowerQueryRoute
   AppSemanticModelRoute: typeof AppSemanticModelRoute
@@ -157,6 +177,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAnalysisRoute: AppAnalysisRoute,
   AppDaxMeasuresRoute: AppDaxMeasuresRoute,
   AppPowerQueryRoute: AppPowerQueryRoute,
   AppSemanticModelRoute: AppSemanticModelRoute,

@@ -3,6 +3,7 @@ import type {
   MigrationMetadata, SourceTable, FinalTable, Relationship, EtlOperation,
   Requirement, SetAnalysisRow, BusinessMetadata, TechnicalMetadata, MigrationValidationReport,
 } from "./types";
+import type { EnterpriseAnalysis } from "./enterprise-parser";
 
 interface MigrationStore extends MigrationMetadata {
   sourceQvsText?: string;
@@ -39,9 +40,28 @@ interface MigrationStore extends MigrationMetadata {
   setVariableLogic: (data: { variables: Record<string, string>; fileName: string }) => void;
   setStageStatus: (stage: number, status: "pending" | "in-progress" | "complete", accuracy?: number) => void;
   setVariables: (vars: Record<string, string>) => void;
+  
+  // Enterprise Analysis State
+  enterpriseAnalysis: EnterpriseAnalysis | null;
+  enterpriseMappingRows: any[];
+  enterpriseColumnTypeEdits: Record<string, string>;
+  enterpriseAiQueries: Record<string, string> | null;
+  setEnterpriseAnalysis: (data: EnterpriseAnalysis | null) => void;
+  setEnterpriseMappingRows: (rows: any[]) => void;
+  setEnterpriseColumnTypeEdits: (edits: Record<string, string>) => void;
+  setEnterpriseAiQueries: (queries: Record<string, string> | null) => void;
+  uploadedFiles: any[];
+  setUploadedFiles: (files: any[]) => void;
 }
 
-const initial: MigrationMetadata & { sourceQvsText?: string; etlQvsText?: string } = {
+const initial: MigrationMetadata & { 
+  sourceQvsText?: string; 
+  etlQvsText?: string;
+  enterpriseAnalysis: EnterpriseAnalysis | null;
+  enterpriseMappingRows: any[];
+  enterpriseColumnTypeEdits: Record<string, string>;
+  enterpriseAiQueries: Record<string, string> | null;
+} = {
   sourceTables: [],
   etlOperations: [],
   allTables: [],
@@ -58,6 +78,11 @@ const initial: MigrationMetadata & { sourceQvsText?: string; etlQvsText?: string
   etlQvsText: undefined,
   stageStatus: { 1: "pending", 2: "pending", 3: "pending", 4: "pending", 5: "pending", 6: "pending" },
   stageAccuracy: { 1: null, 2: null, 3: null, 4: null, 5: null, 6: null },
+  enterpriseAnalysis: null,
+  enterpriseMappingRows: [],
+  enterpriseColumnTypeEdits: {},
+  enterpriseAiQueries: null,
+  uploadedFiles: [],
 };
 
 export const useMigration = create<MigrationStore>((set) => ({
@@ -90,4 +115,9 @@ export const useMigration = create<MigrationStore>((set) => ({
       stageAccuracy: accuracy !== undefined ? { ...s.stageAccuracy, [stage]: accuracy } : s.stageAccuracy,
     })),
   setVariables: (variables) => set({ variables }),
+  setEnterpriseAnalysis: (enterpriseAnalysis) => set({ enterpriseAnalysis }),
+  setEnterpriseMappingRows: (enterpriseMappingRows) => set({ enterpriseMappingRows }),
+  setEnterpriseColumnTypeEdits: (enterpriseColumnTypeEdits) => set({ enterpriseColumnTypeEdits }),
+  setEnterpriseAiQueries: (enterpriseAiQueries) => set({ enterpriseAiQueries }),
+  setUploadedFiles: (uploadedFiles) => set({ uploadedFiles }),
 }));

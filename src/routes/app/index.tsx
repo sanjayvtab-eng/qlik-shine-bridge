@@ -7,5 +7,5 @@ export const Route = createFileRoute("/app/")({
 
 function AppIndexRoute() {
   const navigate = useNavigate();
-  return <Stage3AiAnalysis onNext={() => navigate({ to: "/app/power-query" })} />;
+  return <Stage3AiAnalysis onNext={() => navigate({ to: "/app/analysis" })} />;
 }

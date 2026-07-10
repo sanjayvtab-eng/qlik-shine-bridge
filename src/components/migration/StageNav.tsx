@@ -6,9 +6,10 @@ import { Link, useRouterState } from "@tanstack/react-router";
 
 export const STAGES = [
   { id: 1, label: "Upload & Extract", path: "/app" },
-  { id: 2, label: "Power Query", path: "/app/power-query" },
-  { id: 3, label: "Semantic Model", path: "/app/semantic-model" },
+  { id: 2, label: "Enterprise Analysis", path: "/app/analysis" },
+  { id: 3, label: "Power Query", path: "/app/power-query" },
   { id: 4, label: "DAX Measures", path: "/app/dax-measures" },
+  { id: 5, label: "Semantic Model", path: "/app/semantic-model" },
 ] as const;
 
 export function StageNav() {

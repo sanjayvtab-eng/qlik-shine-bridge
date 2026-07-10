@@ -26,6 +26,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
 
   const handleFiles = (files: ExtractedFile[]) => {
     setAllFiles(files);
+    useMigration.getState().setUploadedFiles(files);
     setComplete(false);
     setError(null);
     setSelectedSources([]);
@@ -217,20 +218,6 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
-      {/* ── Enterprise Migration Workbench ─────────────────────────────────── */}
-      {allFiles.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 px-1">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Enterprise Analysis Engine</span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-          <p className="text-xs text-muted-foreground px-1">
-            Full 10-stage Qlik → Power BI pipeline: source mapping, QVD bypass, M query generation, data types, DAX translation, relationship inference, validation, and PBIP export.
-          </p>
-          <EnterpriseAnalysisPanel files={allFiles} onAnalysisComplete={() => {}} />
-        </div>
-      )}
     </div>
   );
 }
