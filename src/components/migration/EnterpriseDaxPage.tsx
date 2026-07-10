@@ -1,7 +1,7 @@
 // EnterpriseDaxPage - used in /app/dax-measures dedicated route
 import type { EnterpriseAnalysis } from "@/lib/migration/enterprise-parser";
 import { TabDaxMeasures } from "./EnterpriseAnalysisPanel";
-import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
+
 
 interface Props {
   analysis: EnterpriseAnalysis;

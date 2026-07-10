@@ -13,15 +13,13 @@ import { cn } from "@/lib/utils";
 import {
   Database, FileText, Table2, GitBranch, Layers, BarChart3,
   Network, ShieldCheck, Download, Braces, Loader2, AlertCircle,
-  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles, Package, Save
+  Check, ChevronDown, ChevronRight, RefreshCw, Info, X, Sparkles, Package, Save, Copy
 } from "lucide-react";
 import type { ExtractedFile } from "./MultiFileDropzone";
 import { useMigration } from "@/lib/migration/store";
 import { generatePowerQueryViaAi } from "@/lib/migration/gemini";
 
 import { generatePbipZip } from "@/lib/migration/pbip-generator";
-import { BulkMeasureTranslator } from "./BulkMeasureTranslator";
-
 // ────────────────────────────────────────────────────────────────
 // Types
 // ────────────────────────────────────────────────────────────────
@@ -1108,20 +1106,71 @@ export function TabMQueryDataTypes({
 // ────────────────────────────────────────────────────────────────
 
 export function TabDaxMeasures({ analysis }: { analysis: EnterpriseAnalysis }) {
-  const rows = analysis.daxMeasures.map(m => ({
-    Measure: m.measureName, DAX: m.dax, "Source Qlik Expression": m.qlikExpression,
-    Table: m.table, Confidence: m.confidence, Notes: m.notes, Warning: m.warning, Source: m.source,
-  }));
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const copyToClipboard = (text: string, index: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const measures = analysis.daxMeasures || [];
+
   return (
-    <div className="surface-card p-4 space-y-8">
-      <div>
-        <SectionHeader title="Consolidated DAX Measures" sub="Aggregations auto-translated from Qlik to DAX" />
-        {rows.length ? <DataTable rows={rows} /> : <p className="text-xs text-muted-foreground">No aggregation expressions converted.</p>}
-      </div>
+    <div className="space-y-6">
+      <SectionHeader title="Consolidated DAX Measures" sub="Aggregations auto-translated from Qlik to DAX" />
       
-      <div className="border-t border-border pt-6">
-        <BulkMeasureTranslator />
-      </div>
+      {measures.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No aggregation expressions converted.</p>
+      ) : (
+        <div className="rounded-xl border border-border overflow-hidden bg-surface">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider bg-surface-elevated border-b border-border">
+                <tr>
+                  <th className="px-4 py-3">Measure Name</th>
+                  <th className="px-4 py-3">Qlik Expression</th>
+                  <th className="px-4 py-3">Generated DAX</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {measures.map((res, idx) => (
+                  <tr key={idx} className="hover:bg-surface-elevated/30 transition-colors">
+                    <td className="px-4 py-4 font-medium whitespace-nowrap align-top">{res.measureName}</td>
+                    <td className="px-4 py-4 font-mono text-xs text-muted-foreground align-top min-w-[200px]" title={res.qlikExpression}>
+                      {res.qlikExpression}
+                    </td>
+                    <td className="px-4 py-4 align-top w-full">
+                      <div className="relative group min-w-[300px]">
+                        <pre className="p-3 rounded-lg bg-[#0B1120] text-slate-50 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
+                          <code>{res.dax}</code>
+                        </pre>
+                        <button
+                          onClick={() => copyToClipboard(res.dax, idx)}
+                          className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white opacity-0 group-hover:opacity-100 transition-opacity text-[10px] border border-white/10"
+                          title="Copy DAX"
+                        >
+                          {copiedIndex === idx ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                          {copiedIndex === idx ? "Copied" : "Copy DAX"}
+                        </button>
+                      </div>
+                      <div className="mt-1.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Confidence: {res.confidence}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 align-top text-center">
+                      <div className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#E6F8ED] text-[#10B981] text-[10px] font-bold tracking-wide border border-[#10B981]/20">
+                        SUCCESS
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
