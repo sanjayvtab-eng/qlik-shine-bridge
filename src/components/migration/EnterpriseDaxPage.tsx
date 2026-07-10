@@ -16,14 +16,6 @@ export function EnterpriseDaxPage({ analysis }: Props) {
           DAX measures automatically translated from Qlik set analysis and variable expressions.
         </p>
         <TabDaxMeasures analysis={analysis} />
-      </div>
-      <div className="surface-card p-4">
-        <h3 className="font-display font-semibold text-lg text-foreground mb-1">Bulk Measure Translator</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Paste additional Qlik expressions to translate them to DAX measures in bulk.
-        </p>
-        <BulkMeasureTranslator />
-      </div>
     </div>
   );
 }
