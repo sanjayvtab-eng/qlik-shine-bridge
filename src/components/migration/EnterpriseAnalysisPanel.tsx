@@ -871,10 +871,11 @@ function TabMQueryDataTypes({
   };
 
   const handleAiGenerate = async () => {
-    if (!businessMetadata || !technicalMetadata || !ruleBookMd) {
+    if (!businessMetadata || !technicalMetadata) {
       setAiError("AI Lineage Analysis (Step 5 below) must be completed first to use the AI Query Engine.");
       return;
     }
+    const safeRb = ruleBookMd || "# Rule Book\n- Extract metadata\n- Convert scripts\n";
     const effectiveTypes = buildEffectiveColumnTypes(savedTypeEdits);
     setGeneratingAi(true);
     setAiError(null);
@@ -882,7 +883,7 @@ function TabMQueryDataTypes({
       const aiOutput = await generatePowerQueryViaAi(
         businessMetadata,
         technicalMetadata,
-        ruleBookMd,
+        safeRb,
         sourceQvsText,
         etlQvsText,
         analysis.sourceMappings,

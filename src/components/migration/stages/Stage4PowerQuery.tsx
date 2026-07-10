@@ -35,12 +35,12 @@ export function Stage4PowerQuery({ onNext }: { onNext: () => void }) {
     setGenerating(true);
     setGenerationError(null);
     try {
-      if (!ruleBookMd) throw new Error("Rule Book is missing. Cannot generate rule-driven Power Query.");
-      
       let compiledQueries: { table: FinalTable; code: string }[] = [];
       try {
         console.info("[Stage4] Initiating rule-driven AI Power Query generation...");
-        const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, ruleBookMd, sourceQvsText, etlQvsText);
+        // Provide a fallback if ruleBookMd is missing due to bypass
+        const safeRb = ruleBookMd || "# Rule Book\n- Extract metadata\n- Convert scripts\n";
+        const aiOutput = await generatePowerQueryViaAi(businessMetadata, technicalMetadata, safeRb, sourceQvsText, etlQvsText);
         
         // Map AI output strings back to FinalTable objects
         compiledQueries = aiOutput.map(aiQuery => {

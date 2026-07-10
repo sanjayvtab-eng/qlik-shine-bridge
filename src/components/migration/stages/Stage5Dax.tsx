@@ -103,9 +103,12 @@ export function Stage5Dax({ onNext }: { onNext?: () => void }) {
 
       let out = "";
       if (engine === "gemini") {
+        const safeReq = state.requirement || { reportName: "Migration", businessObjective: "Migrate Qlik to PBI", businessRequirement: "Auto migration" };
+        const safeRb = state.ruleBookMd || "# Rule Book\n- Convert script\n";
+        
         out = await generateDaxMeasuresWithGemini(
-          state.requirement!,
-          state.ruleBookMd!,
+          safeReq as Requirement,
+          safeRb,
           state.technicalMetadata!
         );
       } else {
