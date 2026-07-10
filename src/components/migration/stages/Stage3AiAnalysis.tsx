@@ -47,7 +47,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
   };
 
   const handleRunScriptAnalysis = async () => {
-    if (!requirement || !ruleBookMd || !bothSelected) return;
+    if (!bothSelected) return;
     setLoading(true);
     setError(null);
     setValidationReport(null);
