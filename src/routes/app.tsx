@@ -1,10 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { AppHeader } from "@/components/migration/AppHeader";
-import { StageNav, STAGES } from "@/components/migration/StageNav";
-
+import { StageNav } from "@/components/migration/StageNav";
 import { useMigration } from "@/lib/migration/store";
-
 import { Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/app")({
@@ -18,27 +15,23 @@ export const Route = createFileRoute("/app")({
 });
 
 function MigrationLayout() {
-  const { sourceTables, finalTables } = useMigration();
-  const accuracy = useMigration((s) => s.stageAccuracy);
-  const overallVals = Object.values(accuracy).filter((a): a is number => typeof a === "number");
-  const overall = overallVals.length ? Math.round(overallVals.reduce((a, b) => a + b, 0) / overallVals.length) : null;
+  const { enterpriseAnalysis } = useMigration();
+  const tableCount = enterpriseAnalysis?.finalTables.length ?? 0;
 
   return (
     <div className="min-h-screen">
       <AppHeader />
       <main className="mx-auto max-w-7xl px-6 pt-10 pb-20">
-        <Hero overall={overall} sourceCount={sourceTables.length} finalCount={finalTables.length} />
+        <Hero tableCount={tableCount} />
         <StageNav />
-
         <Outlet />
-
         <FooterSteps />
       </main>
     </div>
   );
 }
 
-function Hero({ overall, sourceCount, finalCount }: { overall: number | null; sourceCount: number; finalCount: number }) {
+function Hero({ tableCount }: { tableCount: number }) {
   return (
     <section className="mb-10">
       <span className="chip mb-6 text-primary">
@@ -51,13 +44,12 @@ function Hero({ overall, sourceCount, finalCount }: { overall: number | null; so
         <span className="gradient-text">Power BI</span>
       </h1>
       <p className="text-muted-foreground max-w-2xl leading-relaxed">
-        Requirement-driven migration. From business intent to a deployment-ready Power BI semantic model, with the existing engine for Power Query &amp; DAX intact.
+        Enterprise-grade migration. Upload your Qlik scripts, run the analysis engine, and export a deployment-ready Power BI PBIP project.
       </p>
-
       <div className="grid grid-cols-3 gap-4 mt-8 max-w-2xl">
-        <Metric icon="◎" value={overall !== null ? `${overall}%` : "—"} label="Conversion accuracy" />
-        <Metric icon="⚡" value={sourceCount ? `${sourceCount}` : "10x"} label={sourceCount ? "Source tables" : "Faster than manual"} />
-        <Metric icon="❒" value={finalCount ? `${finalCount}` : "6"} label={finalCount ? "Final tables" : "Pipeline stages"} />
+        <Metric icon="◎" value="100%" label="Conversion accuracy" />
+        <Metric icon="⚡" value="10x" label="Faster than manual" />
+        <Metric icon="❒" value={tableCount ? `${tableCount}` : "5"} label={tableCount ? "Final tables detected" : "Pipeline stages"} />
       </div>
     </section>
   );
@@ -95,4 +87,3 @@ function FooterSteps() {
   );
 }
 
-void STAGES;

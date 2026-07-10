@@ -1,7 +1,6 @@
 import { Check } from "lucide-react";
 import { useMigration } from "@/lib/migration/store";
 import { cn } from "@/lib/utils";
-
 import { Link, useRouterState } from "@tanstack/react-router";
 
 export const STAGES = [
@@ -9,21 +8,23 @@ export const STAGES = [
   { id: 2, label: "Enterprise Analysis", path: "/app/analysis" },
   { id: 3, label: "Power Query", path: "/app/power-query" },
   { id: 4, label: "DAX Measures", path: "/app/dax-measures" },
-  { id: 5, label: "Semantic Model", path: "/app/semantic-model" },
+  { id: 5, label: "Model & Export", path: "/app/semantic-model" },
 ] as const;
 
 export function StageNav() {
   const router = useRouterState();
   const currentPath = router.location.pathname;
-  const status = useMigration((s) => s.stageStatus);
-  const accuracy = useMigration((s) => s.stageAccuracy);
+  const { enterpriseAnalysis } = useMigration();
 
-  const completed = STAGES.filter((s) => status[s.id] === "complete").length;
-  const overallAcc =
-    Object.values(accuracy).filter((a): a is number => typeof a === "number");
-  const overall = overallAcc.length
-    ? Math.round(overallAcc.reduce((a, b) => a + b, 0) / overallAcc.length)
-    : null;
+  const getStageStatus = (path: string) => {
+    if (path === "/app") return currentPath !== "/app" && currentPath !== "/app/" ? "complete" : "active";
+    if (path === "/app/analysis") return enterpriseAnalysis !== null ? "complete" : "pending";
+    return "pending";
+  };
+
+  const activeIndex = STAGES.findIndex(s =>
+    s.path === currentPath || (s.path === "/app" && currentPath === "/app/")
+  );
 
   return (
     <div className="surface-card p-5 mb-8">
@@ -33,54 +34,53 @@ export function StageNav() {
             Migration Pipeline
           </div>
           <div className="font-display text-lg font-semibold mt-0.5">
-            4 Stage Automated Conversion
+            {activeIndex >= 0 ? `Stage ${activeIndex + 1} of ${STAGES.length}` : "Migration Engine"}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground">Overall Accuracy</div>
-          <div className="font-display text-2xl font-bold gradient-text">
-            {overall !== null ? `${overall}%` : "—"}
+          <div className="text-xs uppercase tracking-widest text-muted-foreground">Status</div>
+          <div className="font-display text-lg font-bold gradient-text">
+            {enterpriseAnalysis ? `${enterpriseAnalysis.finalTables.length} Tables Ready` : "Awaiting Upload"}
           </div>
         </div>
       </div>
 
       <div className="relative">
         <div className="absolute top-5 left-0 right-0 h-[2px] bg-border" />
-        <div className="relative flex justify-between gap-2 max-w-4xl mx-auto px-4">
-          {STAGES.map((s) => {
-            const isActive = currentPath === s.path || (s.path === "/app" && currentPath === "/app/");
-            const st = status[s.id + 2]; // Map to original stage IDs for accuracy if needed
-            
+        <div
+          className="absolute top-5 left-0 h-[2px] bg-primary transition-all duration-500"
+          style={{ width: activeIndex >= 0 ? `${(activeIndex / (STAGES.length - 1)) * 100}%` : "0%" }}
+        />
+        <div className="relative flex justify-between">
+          {STAGES.map((s, i) => {
+            const isActive = s.path === currentPath || (s.path === "/app" && currentPath === "/app/");
+            const isPast = activeIndex > i;
+
             return (
               <Link
                 key={s.id}
                 to={s.path}
-                className="flex flex-col items-center gap-2 group w-24"
+                className="flex flex-col items-center gap-2 group"
               >
                 <div
                   className={cn(
                     "h-10 w-10 rounded-full grid place-items-center border-2 transition font-semibold text-sm",
-                    st === "complete" && "bg-primary border-primary text-primary-foreground",
-                    isActive && st !== "complete" && "bg-surface border-primary text-primary",
-                    !isActive && st !== "complete" && "bg-surface border-border text-muted-foreground"
+                    isPast && "bg-primary border-primary text-primary-foreground",
+                    isActive && !isPast && "bg-surface border-primary text-primary",
+                    !isActive && !isPast && "bg-surface border-border text-muted-foreground"
                   )}
                 >
-                  {st === "complete" ? <Check className="h-4 w-4" /> : s.id}
+                  {isPast ? <Check className="h-4 w-4" /> : s.id}
                 </div>
-                <div className="text-center">
+                <div className="text-center max-w-[90px]">
                   <div
                     className={cn(
-                      "text-xs font-medium leading-tight",
+                      "text-xs font-medium leading-tight text-center",
                       isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
                     )}
                   >
                     {s.label}
                   </div>
-                  {accuracy[s.id + 2] !== null && accuracy[s.id + 2] !== undefined && (
-                    <div className="text-[10px] text-primary font-semibold mt-0.5">
-                      {accuracy[s.id + 2]}%
-                    </div>
-                  )}
                 </div>
               </Link>
             );
