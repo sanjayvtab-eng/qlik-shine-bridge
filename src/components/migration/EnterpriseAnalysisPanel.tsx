@@ -957,12 +957,7 @@ export function TabMQueryDataTypes({
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            {!aiQueries && (
-              <button onClick={() => handleAiGenerate()} disabled={generatingAi} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium shadow-sm hover:opacity-90 disabled:opacity-50 transition-all">
-                {generatingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {generatingAi ? "Compiling..." : "Generate M Query"}
-              </button>
-            )}
+
             {aiQueries && (
               <>
                 <button onClick={() => handleAiGenerate()} disabled={generatingAi} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 disabled:opacity-50">

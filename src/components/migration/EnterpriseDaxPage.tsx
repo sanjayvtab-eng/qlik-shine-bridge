@@ -16,6 +16,7 @@ export function EnterpriseDaxPage({ analysis }: Props) {
           DAX measures automatically translated from Qlik set analysis and variable expressions.
         </p>
         <TabDaxMeasures analysis={analysis} />
+      </div>
     </div>
   );
 }
