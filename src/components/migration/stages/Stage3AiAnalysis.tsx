@@ -40,13 +40,17 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
         setSelectedSources([qvsFiles[0]]);
         setSelectedEtls([qvsFiles[0]]);
       } else {
-        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform)/i.test(f.name));
-        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform)/i.test(f.name));
+        // Use f.path instead of f.name so folder names (e.g. '02_transform/') are checked
+        const likelyEtls = qvsFiles.filter((f) => /(etl|main|fact|transform)/i.test(f.path));
+        const likelySources = qvsFiles.filter((f) => !/(etl|main|fact|transform)/i.test(f.path));
 
         if (likelySources.length > 0 && likelyEtls.length > 0) {
           setSelectedSources(likelySources);
           setSelectedEtls(likelyEtls);
         } else {
+          // If we couldn't differentiate, just put the first half in source and second half in etl as a fallback, 
+          // or just put the first one in source and rest in etl.
+          // The user can manually toggle them.
           setSelectedSources([qvsFiles[0]]);
           setSelectedEtls(qvsFiles.slice(1));
         }
