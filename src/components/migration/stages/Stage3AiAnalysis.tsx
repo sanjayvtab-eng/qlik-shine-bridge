@@ -62,7 +62,7 @@ export function Stage3AiAnalysis({ onNext }: { onNext: () => void }) {
       const etlRes = parseEtlQvs(etlText, srcTables);
 
       // 2. Invoke structured semantic AI extraction with fallback strings for missing manual inputs
-      const safeReq = requirement || "Migrate Qlik to Power BI automatically.";
+      const safeReq = requirement || { reportName: "Migration", businessObjective: "Migrate Qlik to PBI", businessRequirement: "Auto migration" } as any;
       const safeRb = ruleBookMd || "# Rule Book\n- Extract metadata\n- Convert scripts\n";
       const aiResponse = await analyzeQvsScriptsViaAi(safeReq, safeRb, sourceText, etlText, { srcTables, etlRes });
       const technicalMetadata = aiResponse.technicalMetadata;

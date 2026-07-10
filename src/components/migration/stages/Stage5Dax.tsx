@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { MigrationValidationReport, Requirement } from "@/lib/migration/types";
 import { useMigration } from "@/lib/migration/store";
 import { generateDaxMeasures } from "@/lib/migration/generators";
 import { generateDaxMeasuresWithGemini } from "@/lib/migration/gemini";
