@@ -1501,7 +1501,8 @@ export function rowsToUpdates(rows: Record<string, string>[]): Record<string, { 
     const original = (r['original_ref'] || r['originalRef'] || '').trim();
     if (!original) continue;
     const mapped = (r['mapped_ref'] || r['mappedRef'] || original).trim();
-    const ct = connector(mapped || original);
+    const providedCt = r['connector_type'] || r['connectorType'] || '';
+    const ct = providedCt ? providedCt : connector(mapped || original);
     const db_incomplete = ct === 'Database/SQL' && !(mapped.toLowerCase().includes('server=') && mapped.toLowerCase().includes('database='));
     let status = r['status'] || 'Needs review';
     if (!status || status === 'Needs review') {
