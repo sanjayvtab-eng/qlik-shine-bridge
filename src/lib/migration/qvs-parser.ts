@@ -148,6 +148,45 @@ function splitStatements(src: string): Statement[] {
   return out;
 }
 
+export function validateQlikSyntax(files: { name: string, text?: string | null }[]): { file: string; message: string }[] {
+  const errors: { file: string; message: string }[] = [];
+  
+  for (const f of files) {
+    if (!f.text) continue;
+    let depth = 0, inStr: string | null = null;
+    let lineNum = 1;
+    for (let i = 0; i < f.text.length; i++) {
+      const ch = f.text[i];
+      if (ch === '\n') lineNum++;
+      if (inStr) {
+        if (ch === inStr) inStr = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"') { inStr = ch; continue; }
+      if (ch === "(" || ch === "[") depth++;
+      else if (ch === ")" || ch === "]") depth--;
+      
+      if (depth < 0) {
+        errors.push({ file: f.name, message: `Syntax Error: Unmatched closing parenthesis/bracket at line ${lineNum}` });
+        depth = 0;
+      }
+    }
+    if (inStr) errors.push({ file: f.name, message: `Syntax Error: Unclosed string literal started with ${inStr}` });
+    if (depth > 0) errors.push({ file: f.name, message: `Syntax Error: Missing closing parenthesis/bracket. Found ${depth} unclosed.` });
+    
+    const stmts = splitStatements(f.text);
+    for (const stmt of stmts) {
+      const upper = stmt.body.toUpperCase();
+      if (upper.startsWith("LOAD ") || upper.startsWith("SQL SELECT ") || upper.startsWith("SELECT ")) {
+        if (!/\b(FROM|RESIDENT|INLINE|AUTOGENERATE|EXTENSION)\b/.test(upper)) {
+           errors.push({ file: f.name, message: `Invalid Query: LOAD/SELECT statement missing FROM/RESIDENT clause: "${stmt.body.slice(0, 50)}..."` });
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 function parseLoadBody(body: string): ParsedLoadBody {
   const isSql = /^\s*SQL\s+/i.test(body) || /^\s*SELECT\s+/i.test(body);
   if (isSql) {

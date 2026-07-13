@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useMigration } from "@/lib/migration/store";
 import { MultiFileDropzone, FileAnalysisPanel, autoAssignSourceAndEtl } from "@/components/migration/MultiFileDropzone";
 import type { ExtractedFile } from "@/components/migration/MultiFileDropzone";
-import { analyzeQvsScriptsViaAi } from "@/lib/migration/gemini";
+import { analyzeQvsScriptsViaAi, validateQvsScriptsViaAi } from "@/lib/migration/gemini";
 import { parseSourceQvs, parseEtlQvs } from "@/lib/migration/qvs-parser";
 import { validateMigrationMetadata } from "@/lib/migration/generators";
 import { PackageOpen, Check, ArrowRight, Loader2, Database, AlertCircle, ShieldCheck } from "lucide-react";
@@ -27,6 +27,7 @@ function UploadPage() {
   const [selectedEtls, setSelectedEtls] = useState<ExtractedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scriptErrors, setScriptErrors] = useState<{ file: string; message: string }[]>([]);
   const [complete, setComplete] = useState(!!businessMetadata && !!technicalMetadata);
   const [validationReport, setValidationReport] = useState<MigrationValidationReport | null>(null);
 
@@ -37,6 +38,7 @@ function UploadPage() {
     setAllFiles(files);
     setComplete(false);
     setError(null);
+    setScriptErrors([]);
     setSelectedSources([]);
     setSelectedEtls([]);
 
@@ -49,8 +51,17 @@ function UploadPage() {
     if (!bothSelected) return;
     setLoading(true);
     setError(null);
+    setScriptErrors([]);
     setValidationReport(null);
     setStageStatus(3, "in-progress");
+
+    const syntaxErrors = await validateQvsScriptsViaAi([...selectedSources, ...selectedEtls]);
+    if (syntaxErrors && syntaxErrors.length > 0) {
+      setScriptErrors(syntaxErrors);
+      setStageStatus(3, "pending");
+      setLoading(false);
+      return;
+    }
 
     try {
       const sourceText = selectedSources.map(f => f.text).join('\n\n');
@@ -178,6 +189,28 @@ function UploadPage() {
           <div>
             <div className="font-semibold text-sm text-destructive">Lineage Engine Error</div>
             <p className="text-xs text-destructive/80 mt-1">{error}</p>
+          </div>
+        </div>
+      )}
+
+      {scriptErrors.length > 0 && (
+        <div className="surface-card p-6 border border-amber-500/30 bg-amber-500/5">
+          <div className="flex items-start gap-3 mb-4">
+            <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-display text-base font-semibold text-amber-500">Syntax or Query Validation Failed</h3>
+              <p className="text-sm text-amber-500/80 mt-0.5">
+                The engine detected invalid or negative queries in your scripts. Please fix them before proceeding.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2 mt-4">
+            {scriptErrors.map((err, idx) => (
+              <div key={idx} className="p-3 rounded-lg bg-surface/50 border border-border text-xs flex flex-col">
+                <span className="font-semibold text-foreground mb-1">{err.file}</span>
+                <span className="text-muted-foreground font-mono">{err.message}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

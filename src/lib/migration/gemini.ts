@@ -1043,3 +1043,68 @@ export async function translateBulkMeasuresViaAi(
     throw new Error("AI returned invalid JSON format.");
   }
 }
+
+export async function validateQvsScriptsViaAi(
+  files: { name: string; text?: string | null }[]
+): Promise<{ file: string; message: string }[]> {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error("Gemini API key is missing.");
+
+  const scriptsText = files
+    .filter(f => f.text)
+    .map(f => `### File: ${f.name}\n${compressQvsScriptForAi(f.text!)}`)
+    .join('\n\n');
+
+  const prompt = `
+    You are an expert Qlik Data Architecture Engine validator. 
+    Analyze the provided Qlik scripts for critical syntax errors or invalid queries.
+    Focus on errors such as:
+    - Missing FROM or RESIDENT in LOAD statements
+    - Using tables in RESIDENT or JOIN that do not exist or were not previously created
+    - Using ApplyMap with a mapping table that wasn't created
+    - Invalid syntax, unbalanced parentheses, invalid SQL syntax
+    - Circular residents or missing source references
+    
+    IGNORE "DROP TABLE" statements; they are considered safe. Do not flag DROP TABLE.
+
+    ### Scripts:
+    ${scriptsText}
+
+    ### OUTPUT FORMAT:
+    Return a STRICT JSON array of objects representing the errors found. If the scripts are perfectly valid, return an empty array [].
+    Array<{
+      file: string; // MUST be the exact File name from the headers above.
+      message: string; // Describe the specific error found and the query it occurs in.
+    }>
+    Do not include markdown codeblocks (\`\`\`).
+  `;
+
+  let engineModel = getActiveModel(PRIMARY_MODEL);
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${engineModel}:generateContent?key=${apiKey}`;
+  
+  const response = await fetchWithRetry(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 2048 }
+    })
+  });
+
+  if (!response.ok) {
+    console.error("Gemini API Error (Validation):", response.statusText);
+    return [];
+  }
+
+  const resultBody = await response.json();
+  const text = resultBody?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+  
+  let cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleanText);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("Failed to parse AI validation response:", cleanText);
+    return [];
+  }
+}

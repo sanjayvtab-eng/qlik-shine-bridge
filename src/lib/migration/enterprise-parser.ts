@@ -810,7 +810,7 @@ function inlineExpression(op: Operation): string {
   return `#table(\n        {${cols.map(esc).join(', ')}},\n        {\n        ${rows.join(',\n        ')}\n        }\n    )`;
 }
 
-function sqlSourceExpression(mappedRef: string): string {
+function dbSourceExpression(mappedRef: string, connectorType: string): string {
   const parts: Record<string, string> = {};
   for (const piece of (mappedRef || '').split(/;|\n/)) {
     if (piece.includes('=')) { const [k, v] = piece.split('=', 2); parts[k.trim().toLowerCase()] = v.trim().replace(/^["']|["']$/g, ''); }
@@ -822,9 +822,31 @@ function sqlSourceExpression(mappedRef: string): string {
   const table = parts['table'] || parts['item'];
   const empty = '#table({}, {})';
   if (!server || !database) return empty;
-  if (query) return `let _empty = ${empty}, _try = try Sql.Database(${esc(server)}, ${esc(database)}, [Query=${esc(query)}]) in if _try[HasError] then _empty else _try[Value]`;
-  if (table) return `let _empty = ${empty}, _db = try Sql.Database(${esc(server)}, ${esc(database)}), _tbl = if _db[HasError] then [HasError=true, Value=_empty] else try _db[Value]{[Schema=${esc(schema)},Item=${esc(table)}]}[Data] in if _db[HasError] or _tbl[HasError] then _empty else _tbl[Value]`;
+  
+  let dbFunc = 'Sql.Database';
+  if (connectorType === 'PostgreSQL') dbFunc = 'PostgreSQL.Database';
+  if (connectorType === 'MySQL') dbFunc = 'MySQL.Database';
+  
+  if (query) return `let _empty = ${empty}, _try = try ${dbFunc}(${esc(server)}, ${esc(database)}, [Query=${esc(query)}]) in if _try[HasError] then _empty else _try[Value]`;
+  
+  if (table) {
+    if (connectorType === 'MySQL') {
+      return `let _empty = ${empty}, _db = try ${dbFunc}(${esc(server)}, ${esc(database)}), _tbl = if _db[HasError] then [HasError=true, Value=_empty] else try _db[Value]{[Item=${esc(table)}]}[Data] in if _db[HasError] or _tbl[HasError] then _empty else _tbl[Value]`;
+    }
+    return `let _empty = ${empty}, _db = try ${dbFunc}(${esc(server)}, ${esc(database)}), _tbl = if _db[HasError] then [HasError=true, Value=_empty] else try _db[Value]{[Schema=${esc(schema)},Item=${esc(table)}]}[Data] in if _db[HasError] or _tbl[HasError] then _empty else _tbl[Value]`;
+  }
   return empty;
+}
+
+function sharepointSourceExpression(mappedRef: string): string {
+  const parts: Record<string, string> = {};
+  for (const piece of (mappedRef || '').split(/;|\n/)) {
+    if (piece.includes('=')) { const [k, v] = piece.split('=', 2); parts[k.trim().toLowerCase()] = v.trim().replace(/^["']|["']$/g, ''); }
+  }
+  const url = parts['siteurl'] || parts['url'] || mappedRef;
+  const empty = '#table({}, {})';
+  if (!url) return empty;
+  return `let _empty = ${empty}, _try = try SharePoint.Files(${esc(url)}, [ApiVersion = 15]) in if _try[HasError] then _empty else _try[Value]`;
 }
 
 function sourceExpression(m: SourceMap | null, _table: string): string {
@@ -841,7 +863,8 @@ function sourceExpression(m: SourceMap | null, _table: string): string {
   if (ct === 'XML') return `let _empty = ${empty}, _try = try Xml.Tables(${contentFn}(${p})) in if _try[HasError] then _empty else _try[Value]`;
   if (ct === 'Web/API') return `let _empty = ${empty}, _web = try Web.Contents(${p}), _json = if _web[HasError] then [HasError=true, Value=_empty] else try Json.Document(_web[Value]), _table = if _json[HasError] then [HasError=true, Value=_empty] else try if Value.Is(_json[Value], type list) then Table.FromRecords(_json[Value]) else if Value.Is(_json[Value], type record) then Record.ToTable(_json[Value]) else _empty in if _web[HasError] or _json[HasError] or _table[HasError] then _empty else _table[Value]`;
   if (ct === 'Folder') return `let _empty = ${empty}, _try = try Folder.Files(${p}) in if _try[HasError] then _empty else _try[Value]`;
-  if (ct === 'Database/SQL') return sqlSourceExpression((m.mappedRef || '').trim());
+  if (ct === 'Database/SQL' || ct === 'SQL Server' || ct === 'PostgreSQL' || ct === 'MySQL') return dbSourceExpression((m.mappedRef || '').trim(), ct);
+  if (ct === 'SharePoint') return sharepointSourceExpression((m.mappedRef || '').trim());
   return empty;
 }
 

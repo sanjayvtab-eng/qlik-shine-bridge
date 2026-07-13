@@ -38,7 +38,7 @@ interface MappingRow {
 }
 
 const CONNECTOR_OPTIONS = [
-  "CSV/Text","Excel","Parquet","JSON","XML","Web/API","Folder","Database/SQL",
+  "CSV/Text","Excel","SQL Server","PostgreSQL","MySQL","SharePoint","Parquet","JSON","XML","Web/API","Folder",
   "QVD bypassed via lineage","QVD - map to supported source","Unknown",
 ];
 const STATUS_OPTIONS = ["Mapped","Needs review","Bypassed"];
@@ -187,6 +187,77 @@ function TabSummary({ analysis }: { analysis: EnterpriseAnalysis }) {
 // TAB 2 — Source Mapping Editor
 // ────────────────────────────────────────────────────────────────
 
+function parseMappedRef(mappedRef: string): Record<string, string> {
+  const parts: Record<string, string> = {};
+  for (const piece of (mappedRef || '').split(/;|\n/)) {
+    if (piece.includes('=')) {
+      const [k, v] = piece.split('=', 2);
+      parts[k.trim()] = v.trim();
+    }
+  }
+  return parts;
+}
+
+function buildMappedRef(parts: Record<string, string>): string {
+  return Object.entries(parts)
+    .filter(([_, v]) => v)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(';');
+}
+
+function DynamicMappingInput({ connectorType, value, onChange }: { connectorType: string, value: string, onChange: (val: string) => void }) {
+  const parts = parseMappedRef(value);
+  
+  if (["CSV/Text", "Excel", "Parquet", "JSON", "XML", "Folder"].includes(connectorType)) {
+    const path = (!value.includes('=') ? value : parts['FilePath']) || '';
+    return (
+      <input
+        value={path}
+        onChange={e => onChange(e.target.value)}
+        placeholder="File Path"
+        className="w-full min-w-[200px] px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono"
+      />
+    );
+  }
+
+  if (connectorType === 'SharePoint') {
+    const url = (!value.includes('=') ? value : parts['SiteURL']) || '';
+    return (
+      <input
+        value={url}
+        onChange={e => onChange(e.target.value)}
+        placeholder="Site URL"
+        className="w-full min-w-[200px] px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono"
+      />
+    );
+  }
+
+  if (["SQL Server", "PostgreSQL", "MySQL", "Database/SQL"].includes(connectorType)) {
+    const updatePart = (k: string, v: string) => {
+      const newParts = { ...parts, [k]: v };
+      onChange(buildMappedRef(newParts));
+    };
+    
+    // When we first switch from CSV to SQL Server, the 'value' is a raw file path, so parts is empty.
+    // If parts is empty, we don't want to lose the existing value completely, but here it's fine.
+    return (
+      <div className="flex gap-2 min-w-[350px]">
+        <input value={parts['Server'] || ''} onChange={e => updatePart('Server', e.target.value)} placeholder="Server" className="w-1/4 px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+        <input value={parts['Database'] || ''} onChange={e => updatePart('Database', e.target.value)} placeholder="Database" className="w-1/4 px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+        {connectorType !== "MySQL" && (
+          <input value={parts['Schema'] || ''} onChange={e => updatePart('Schema', e.target.value)} placeholder="Schema" className="w-1/4 px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+        )}
+        <input value={parts['Table'] || ''} onChange={e => updatePart('Table', e.target.value)} placeholder="Table/View" className="w-1/4 px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+      </div>
+    );
+  }
+
+  return (
+    <input value={value} onChange={e => onChange(e.target.value)}
+      className="w-full min-w-[200px] px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+  );
+}
+
 export function TabSourceMapping({
   analysis, mappingRows, onMappingChange, onApply, applying
 }: {
@@ -286,8 +357,7 @@ export function TabSourceMapping({
                   </td>
                   <td className="px-3 py-1.5">
                     {row.bypassQvd ? <span className="text-muted-foreground text-[10px]">{row.effectiveRef}</span> : (
-                      <input value={row.mappedRef} onChange={e => handleCellChange(i, "mappedRef", e.target.value)}
-                        className="w-full min-w-[200px] px-2 py-1 rounded border border-border bg-surface text-xs text-foreground font-mono" />
+                      <DynamicMappingInput connectorType={row.connectorType} value={row.mappedRef} onChange={val => handleCellChange(i, "mappedRef", val)} />
                     )}
                   </td>
                   <td className="px-3 py-1.5">
