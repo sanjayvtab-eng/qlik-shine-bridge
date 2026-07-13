@@ -777,9 +777,24 @@ export async function generatePowerQueryViaAi(
       \`\`\`
       For Excel: navigate via \`{[Item="SheetName", Kind="Sheet"]}[Data]\`.
 
-    **[2b] SOURCE PATHS AND MAPPINGS**
-    - If the user provided Source Mappings (see Input Context below), you MUST use the exact absolute 'mappedRef' path provided in the mapping instead of creating a generic path.
-    - Example: File.Contents("C:\\Users\\91733\\Downloads\\Staging\\Sales2025.csv")
+    **[2b] SOURCE PATHS AND MAPPINGS (CRITICAL - HIGHEST PRIORITY)**
+    - If the user provided Source Mappings (see Input Context below), you MUST use the exact absolute 'mappedRef' path AND 'connectorType' provided.
+    - The 'connectorType' field in Source Mappings tells you EXACTLY which Power Query connector function to use:
+      - "CSV/Text" → Csv.Document(File.Contents("exact mappedRef path"), ...)
+      - "Excel" → Excel.Workbook(File.Contents("exact mappedRef path"), ...)
+      - "SQL Server" or "Database/SQL" → Sql.Database("Server value", "Database value") then navigate to Schema/Table
+      - "PostgreSQL" → PostgreSQL.Database("Server value", "Database value") then navigate to Schema/Item
+      - "MySQL" → MySQL.Database("Server value", "Database value") then navigate to Item
+      - "SharePoint" → SharePoint.Files("SiteURL value", [ApiVersion=15])
+      - "Web/API" → Web.Contents("exact mappedRef path")
+    - For database connectors (PostgreSQL, MySQL, SQL Server), the 'mappedRef' is a semicolon-delimited string like "Server=localhost;Database=mydb;Schema=public;Table=loans". Parse each key=value pair from this string to build the correct connector call.
+    - Example for PostgreSQL mappedRef "Server=localhost;Database=loan_management;Schema=public;Table=loans":
+      Source = PostgreSQL.Database("localhost", "loan_management"),
+      Loans_Table = Source{[Schema="public", Item="loans"]}[Data]
+    - Example for SQL Server mappedRef "Server=myserver;Database=mydb;Schema=dbo;Table=Sales":
+      Source = Sql.Database("myserver", "mydb"),
+      Sales_Table = Source{[Schema="dbo", Item="Sales"]}[Data]
+    - NEVER override the connectorType from Source Mappings with your own guess. If connectorType is "PostgreSQL", use PostgreSQL.Database, NOT Sql.Database.
     - ONLY if a file is NOT in the Source Mappings, you should declare \`vSourcePath = "TODO: Set your base source folder path here"\` and use \`File.Contents(vSourcePath & "filename")\`.
 
     **[2c] CSV HEADER PROMOTION (CRITICAL)**

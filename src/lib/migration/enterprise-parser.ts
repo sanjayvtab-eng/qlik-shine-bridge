@@ -566,6 +566,11 @@ export function detectTables(operations: Operation[]): Record<string, TableProfi
 export function connector(path: string): string {
   const p = (path || '').trim().toLowerCase().replace(/^["']|["']$/g, '');
   const noQuery = p.split('?')[0];
+  // Detect semicolon-delimited key=value DB connection strings (e.g. Server=...;Database=...)
+  // These come from the dynamic mapping UI and may have any key casing
+  if (p.includes(';') && (p.includes('server=') || p.includes('host=') || p.includes('database=') || p.includes('db='))) {
+    return 'Database/SQL';
+  }
   if (p.startsWith('odbc') || p.startsWith('oledb') || p.startsWith('sql:') || p.startsWith('server=') || p.startsWith('database=') || p.includes('dsn=')) return 'Database/SQL';
   if (/^[a-z]+:\/\//.test(p) && !p.startsWith('lib://')) {
     if (noQuery.endsWith('.csv') || noQuery.endsWith('.txt') || noQuery.endsWith('.tsv') || noQuery.endsWith('.dat')) return 'CSV/Text';
@@ -825,7 +830,8 @@ function dbSourceExpression(mappedRef: string, connectorType: string): string {
   
   let dbFunc = 'Sql.Database';
   if (connectorType === 'PostgreSQL') dbFunc = 'PostgreSQL.Database';
-  if (connectorType === 'MySQL') dbFunc = 'MySQL.Database';
+  else if (connectorType === 'MySQL') dbFunc = 'MySQL.Database';
+  else if (connectorType === 'SQL Server' || connectorType === 'Database/SQL') dbFunc = 'Sql.Database';
   
   if (query) return `let _empty = ${empty}, _try = try ${dbFunc}(${esc(server)}, ${esc(database)}, [Query=${esc(query)}]) in if _try[HasError] then _empty else _try[Value]`;
   
