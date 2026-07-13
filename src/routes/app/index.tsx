@@ -55,15 +55,14 @@ function UploadPage() {
     setValidationReport(null);
     setStageStatus(3, "in-progress");
 
-    const syntaxErrors = await validateQvsScriptsViaAi([...selectedSources, ...selectedEtls]);
-    if (syntaxErrors && syntaxErrors.length > 0) {
-      setScriptErrors(syntaxErrors);
-      setStageStatus(3, "pending");
-      setLoading(false);
-      return;
-    }
-
     try {
+      const syntaxErrors = await validateQvsScriptsViaAi([...selectedSources, ...selectedEtls]);
+      if (syntaxErrors && syntaxErrors.length > 0) {
+        setScriptErrors(syntaxErrors);
+        setStageStatus(3, "pending");
+        setLoading(false);
+        return;
+      }
       const sourceText = selectedSources.map(f => f.text).join('\n\n');
       const etlText = selectedEtls.map(f => f.text).join('\n\n');
 
