@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { AppHeader } from "@/components/migration/AppHeader";
 import { StageNav } from "@/components/migration/StageNav";
 import { useMigration } from "@/lib/migration/store";
 import { Outlet } from "@tanstack/react-router";
+import { useAuth } from "@/contexts/AuthContext";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -11,8 +13,29 @@ export const Route = createFileRoute("/app")({
       { name: "description", content: "AI-assisted Qlik to Power BI migration." },
     ],
   }),
-  component: MigrationLayout,
+  component: AuthGuard,
 });
+
+function AuthGuard() {
+  const { session, loading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !session) {
+      navigate({ to: "/auth" });
+    }
+  }, [session, loading, navigate]);
+
+  if (loading || !session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <span className="h-4 w-4 rounded-full bg-primary animate-pulse" />
+      </div>
+    );
+  }
+
+  return <MigrationLayout />;
+}
 
 function MigrationLayout() {
   const { enterpriseAnalysis } = useMigration();
