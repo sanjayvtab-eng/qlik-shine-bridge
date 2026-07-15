@@ -409,7 +409,7 @@ function AuthPage() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="mb-8">
                 <h2 className="text-2xl font-bold tracking-tight text-foreground mb-2">Check your email</h2>
-                <p className="text-muted-foreground">We sent a 6-digit verification code to <strong>{email}</strong></p>
+                <p className="text-muted-foreground">We sent a {authState === "RECOVERY_OTP" ? "8-digit" : "6-digit"} verification code to <strong>{email}</strong></p>
               </div>
               <form onSubmit={authState === "VERIFY_OTP" ? handleVerifySignupOtp : handleRecoveryOtp} className="space-y-6">
                 <div className="space-y-2">
@@ -420,14 +420,14 @@ function AuthPage() {
                     inputMode="numeric"
                     required
                     autoComplete="one-time-code"
-                    maxLength={6}
+                    maxLength={authState === "RECOVERY_OTP" ? 8 : 6}
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                    className="flex h-12 text-center text-2xl tracking-[0.5em] font-mono w-full rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder="------"
+                    className="flex h-12 text-center text-2xl tracking-[0.2em] sm:tracking-[0.5em] font-mono w-full rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder={authState === "RECOVERY_OTP" ? "--------" : "------"}
                   />
                 </div>
-                <button type="submit" disabled={loading || otp.length !== 6} className={btnCls}>
+                <button type="submit" disabled={loading || otp.length !== (authState === "RECOVERY_OTP" ? 8 : 6)} className={btnCls}>
                   {loading ? "Verifying…" : "Verify Code"}
                 </button>
               </form>
