@@ -204,13 +204,14 @@ function AuthPage() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
-    setLoading(false);
-    if (error) {
-      toast.error(sanitizeError(error));
-    } else {
+    try {
+      await postAuthJson("/api/auth/recovery/send-otp", { email });
       toast.success("Password reset code sent to your email.");
       setAuthState("RECOVERY_OTP");
+    } catch (error) {
+      toast.error(sanitizeError(error));
+    } finally {
+      setLoading(false);
     }
   };
 

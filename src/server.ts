@@ -81,32 +81,34 @@ function normalizeEmail(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
-function getEmailHtml(token: string) {
-  return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827"><h2>VTAB Square verification code</h2><p>Use this code to complete your signup:</p><div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:24px 0">${token}</div><p>This code expires in 10 minutes.</p></div>`;
+function getEmailHtml(token: string, isRecovery: boolean) {
+  const title = isRecovery ? "VTAB Square password reset" : "VTAB Square verification code";
+  const desc = isRecovery ? "Use this code to reset your password:" : "Use this code to complete your signup:";
+  return `<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827"><h2>${title}</h2><p>${desc}</p><div style="font-size:28px;font-weight:700;letter-spacing:6px;margin:24px 0">${token}</div><p>This code expires in 10 minutes.</p></div>`;
 }
 
-async function sendSignupOtpEmail(runtimeEnv: RuntimeEnv, email: string, token: string) {
+async function sendOtpEmail(runtimeEnv: RuntimeEnv, email: string, token: string, isRecovery: boolean = false) {
   const fromEmail = runtimeEnv.AUTH_EMAIL_FROM;
   const fromName = runtimeEnv.AUTH_EMAIL_FROM_NAME || "VTAB Square";
   const brevoApiKey = runtimeEnv.BREVO_API_KEY;
   const resendApiKey = runtimeEnv.RESEND_API_KEY;
+  const subject = isRecovery ? "Your VTAB Square password reset code" : "Your VTAB Square signup code";
+  const textContent = isRecovery 
+    ? `Your VTAB Square password reset code is ${token}. It expires in 10 minutes.`
+    : `Your VTAB Square signup code is ${token}. It expires in 10 minutes.`;
 
   if (!fromEmail) throw new Error("AUTH_EMAIL_FROM is not configured.");
 
   if (brevoApiKey) {
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
-      headers: {
-        "accept": "application/json",
-        "api-key": brevoApiKey,
-        "content-type": "application/json",
-      },
+      headers: { "accept": "application/json", "api-key": brevoApiKey, "content-type": "application/json" },
       body: JSON.stringify({
         sender: { email: fromEmail, name: fromName },
         to: [{ email }],
-        subject: "Your VTAB Square signup code",
-        htmlContent: getEmailHtml(token),
-        textContent: `Your VTAB Square signup code is ${token}. It expires in 10 minutes.`,
+        subject,
+        htmlContent: getEmailHtml(token, isRecovery),
+        textContent,
       }),
     });
     if (!response.ok) throw new Error(await response.text());
@@ -116,16 +118,13 @@ async function sendSignupOtpEmail(runtimeEnv: RuntimeEnv, email: string, token: 
   if (resendApiKey) {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: {
-        "authorization": `Bearer ${resendApiKey}`,
-        "content-type": "application/json",
-      },
+      headers: { "authorization": `Bearer ${resendApiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         from: `${fromName} <${fromEmail}>`,
         to: [email],
-        subject: "Your VTAB Square signup code",
-        html: getEmailHtml(token),
-        text: `Your VTAB Square signup code is ${token}. It expires in 10 minutes.`,
+        subject,
+        html: getEmailHtml(token, isRecovery),
+        text: textContent,
       }),
     });
     if (!response.ok) throw new Error(await response.text());
@@ -148,8 +147,38 @@ async function handleSendSignupOtp(request: Request, runtimeEnv: RuntimeEnv) {
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const stateToken = await signStateToken(email, token, expiresAt, serviceRoleKey);
   
-  await sendSignupOtpEmail(runtimeEnv, email, token);
+  await sendOtpEmail(runtimeEnv, email, token, false);
   return jsonResponse({ ok: true, stateToken });
+}
+
+async function handleSendRecoveryOtp(request: Request, runtimeEnv: RuntimeEnv) {
+  const body = await readJsonBody(request);
+  const email = normalizeEmail(body && typeof body === "object" ? (body as { email?: unknown }).email : undefined);
+
+  if (!email || !email.includes("@")) return jsonResponse({ error: "Enter a valid email address." }, { status: 400 });
+
+  const supabaseUrl = runtimeEnv.SUPABASE_URL || runtimeEnv.VITE_SUPABASE_URL;
+  const serviceRoleKey = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) return jsonResponse({ error: "Server misconfiguration." }, { status: 500 });
+
+  const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: { "authorization": `Bearer ${serviceRoleKey}`, "apikey": serviceRoleKey, "content-type": "application/json" },
+    body: JSON.stringify({ type: "recovery", email }),
+  });
+
+  if (!response.ok) {
+    // If user doesn't exist, we swallow it to prevent email enumeration, exactly as Supabase does.
+    if (response.status === 404) return jsonResponse({ ok: true }); 
+    throw new Error(await response.text() || "Could not generate recovery link.");
+  }
+
+  const data = await response.json();
+  const token = data.email_otp;
+  if (!token) throw new Error("No OTP returned from Supabase.");
+
+  await sendOtpEmail(runtimeEnv, email, token, true);
+  return jsonResponse({ ok: true });
 }
 
 async function createConfirmedSupabaseUser(runtimeEnv: RuntimeEnv, email: string, password: string) {
@@ -204,11 +233,14 @@ async function handleVerifySignupOtp(request: Request, runtimeEnv: RuntimeEnv) {
   return jsonResponse({ ok: true });
 }
 
-async function handleAuthApiRequest(request: Request, runtimeEnv: RuntimeEnv) {
-  const pathname = new URL(request.url).pathname;
+export async function handleAuthApiRequest(request: Request, runtimeEnv: RuntimeEnv) {
   try {
-    if (request.method === "POST" && pathname === "/api/auth/signup/send-otp") return await handleSendSignupOtp(request, runtimeEnv);
-    if (request.method === "POST" && pathname === "/api/auth/signup/verify") return await handleVerifySignupOtp(request, runtimeEnv);
+    const url = new URL(request.url);
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+
+    if (url.pathname === "/api/auth/signup/send-otp") return await handleSendSignupOtp(request, runtimeEnv);
+    if (url.pathname === "/api/auth/signup/verify") return await handleVerifySignupOtp(request, runtimeEnv);
+    if (url.pathname === "/api/auth/recovery/send-otp") return await handleSendRecoveryOtp(request, runtimeEnv);
     return null;
   } catch (error) {
     console.error(error);
