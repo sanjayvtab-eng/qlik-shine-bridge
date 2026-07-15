@@ -176,7 +176,9 @@ async function createConfirmedSupabaseUser(runtimeEnv: RuntimeEnv, email: string
   if (response.ok) return;
 
   const text = await response.text();
-  if (response.status === 422 && /already|registered|exists/i.test(text)) return;
+  if (response.status === 422 && /already|registered|exists/i.test(text)) {
+    throw new Error("An account with this email already exists.");
+  }
   throw new Error(text || "Could not create user.");
 }
 
