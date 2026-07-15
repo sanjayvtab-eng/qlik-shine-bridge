@@ -100,7 +100,26 @@ function UploadPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "QVS structural code lineage analysis failed.";
       setError(msg);
-      setStageStatus(3, "pending");
+      
+      // FALLBACK: Populate store with whatever local structural parsing succeeded
+      const sourceText = selectedSources.map(f => f.text).join('\n\n');
+      const etlText = selectedEtls.map(f => f.text).join('\n\n');
+      const srcTables = parseSourceQvs(sourceText) || [];
+      const etlRes = parseEtlQvs(etlText, srcTables) || { sourceTables: [], targetTables: [], transformations: [] };
+
+      setSourceAnalysis({ sourceTables: srcTables, sourceFileName: selectedSources.map(f => f.name).join(', '), text: sourceText });
+      setEtlAnalysis({ ...etlRes, etlFileName: selectedEtls.map(f => f.name).join(', '), text: etlText });
+      
+      setMergedMetadata({
+        businessMetadata: { title: "Fallback Analysis", purpose: "Proceeded with errors", expectedOutcomes: [], kpis: [] },
+        technicalMetadata: { sourceDatabases: [], finalTables: etlRes.targetTables.map(t => ({ name: t.name, description: "", columns: [] })), relationships: [], daxMeasures: [] },
+        finalTables: etlRes.targetTables.map(t => ({ name: t.name, description: "", columns: [] })),
+        relationships: [],
+        validationReport: { valid: false, issues: [{ severity: "high", message: msg }] }
+      });
+
+      setStageStatus(3, "complete", 100);
+      setComplete(true);
     } finally {
       setLoading(false);
     }
