@@ -205,7 +205,8 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await postAuthJson("/api/auth/recovery/send-otp", { email });
+      const res = await postAuthJson("/api/auth/recovery/send-otp", { email });
+      setStateToken(res.stateToken || "");
       toast.success("Password reset code sent to your email.");
       setAuthState("RECOVERY_OTP");
     } catch (error) {
@@ -218,13 +219,14 @@ function AuthPage() {
   const handleRecoveryOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { data, error } = await supabase.auth.verifyOtp({ email, token: otp, type: "recovery" });
-    setLoading(false);
-    if (error) {
-      toast.error(sanitizeError(error));
-    } else if (data.session) {
+    try {
+      await postAuthJson("/api/auth/recovery/verify", { email, token: otp, stateToken });
       toast.success("Code verified. Please create a new password.");
       setAuthState("NEW_PASSWORD");
+    } catch (error) {
+      toast.error(sanitizeError(error));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -235,15 +237,17 @@ function AuthPage() {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    setLoading(false);
-    if (error) {
-      toast.error(sanitizeError(error));
-    } else {
-      toast.success("Password updated successfully! Please sign in again.");
+    try {
+      await postAuthJson("/api/auth/recovery/reset", { email, token: otp, stateToken, newPassword: password });
+      toast.success("Password reset successfully! Please sign in.");
       await supabase.auth.signOut();
-      setPassword("");
       setAuthState("SIGN_IN");
+      setPassword("");
+      setOtp("");
+    } catch (error) {
+      toast.error(sanitizeError(error));
+    } finally {
+      setLoading(false);
     }
   };
 

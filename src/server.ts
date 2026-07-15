@@ -174,10 +174,72 @@ async function handleSendRecoveryOtp(request: Request, runtimeEnv: RuntimeEnv) {
   }
 
   const data = await response.json();
-  const token = data.email_otp;
-  if (!token) throw new Error("No OTP returned from Supabase.");
+  const token = data.properties?.email_otp || data.email_otp;
+  const uid = data.user?.id;
+  if (!token || !uid) throw new Error("Could not retrieve recovery details from Supabase.");
+
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const stateToken = await signStateToken(email, token + ":" + uid, expiresAt, serviceRoleKey);
 
   await sendOtpEmail(runtimeEnv, email, token, true);
+  return jsonResponse({ ok: true, stateToken });
+}
+
+async function handleVerifyRecoveryOtp(request: Request, runtimeEnv: RuntimeEnv) {
+  const body = await readJsonBody(request);
+  const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const email = normalizeEmail(payload.email);
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  const stateToken = typeof payload.stateToken === "string" ? payload.stateToken : "";
+  
+  const serviceRoleKey = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) return jsonResponse({ error: "Server misconfiguration." }, { status: 500 });
+
+  if (!email || !token || !stateToken) return jsonResponse({ error: "Email, verification code, and state token are required." }, { status: 400 });
+  
+  const record = await verifyStateToken(stateToken, serviceRoleKey);
+  if (!record || record.email !== email || record.expiresAt < Date.now()) return jsonResponse({ error: "Verification code expired or invalid. Please request a new one." }, { status: 400 });
+  
+  const [expectedToken, uid] = record.token.split(":");
+  if (expectedToken !== token) return jsonResponse({ error: "Invalid verification code." }, { status: 400 });
+
+  // Verification successful. We return ok. The stateToken is still valid and can be used for the reset step.
+  return jsonResponse({ ok: true });
+}
+
+async function handleResetPassword(request: Request, runtimeEnv: RuntimeEnv) {
+  const body = await readJsonBody(request);
+  const payload = body && typeof body === "object" ? body as Record<string, unknown> : {};
+  const email = normalizeEmail(payload.email);
+  const token = typeof payload.token === "string" ? payload.token.trim() : "";
+  const stateToken = typeof payload.stateToken === "string" ? payload.stateToken : "";
+  const newPassword = typeof payload.newPassword === "string" ? payload.newPassword : "";
+  
+  const supabaseUrl = runtimeEnv.SUPABASE_URL || runtimeEnv.VITE_SUPABASE_URL;
+  const serviceRoleKey = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) return jsonResponse({ error: "Server misconfiguration." }, { status: 500 });
+
+  if (!email || !token || !stateToken || !newPassword) return jsonResponse({ error: "Missing required fields." }, { status: 400 });
+  if (newPassword.length < 6) return jsonResponse({ error: "Password must be at least 6 characters." }, { status: 400 });
+  
+  const record = await verifyStateToken(stateToken, serviceRoleKey);
+  if (!record || record.email !== email || record.expiresAt < Date.now()) return jsonResponse({ error: "Verification code expired or invalid. Please request a new one." }, { status: 400 });
+  
+  const [expectedToken, uid] = record.token.split(":");
+  if (expectedToken !== token) return jsonResponse({ error: "Invalid verification code." }, { status: 400 });
+
+  // Reset the password via Admin API
+  const updateRes = await fetch(`${supabaseUrl.replace(/\/$/, "")}/auth/v1/admin/users/${uid}`, {
+    method: "PUT",
+    headers: { "authorization": `Bearer ${serviceRoleKey}`, "apikey": serviceRoleKey, "content-type": "application/json" },
+    body: JSON.stringify({ password: newPassword }),
+  });
+
+  if (!updateRes.ok) {
+    const text = await updateRes.text();
+    throw new Error(text || "Could not update password.");
+  }
+
   return jsonResponse({ ok: true });
 }
 
@@ -242,6 +304,8 @@ export async function handleAuthApiRequest(request: Request, runtimeEnv: Runtime
     if (url.pathname === "/api/auth/signup/send-otp") return await handleSendSignupOtp(request, runtimeEnv);
     if (url.pathname === "/api/auth/signup/verify") return await handleVerifySignupOtp(request, runtimeEnv);
     if (url.pathname === "/api/auth/recovery/send-otp") return await handleSendRecoveryOtp(request, runtimeEnv);
+    if (url.pathname === "/api/auth/recovery/verify") return await handleVerifyRecoveryOtp(request, runtimeEnv);
+    if (url.pathname === "/api/auth/recovery/reset") return await handleResetPassword(request, runtimeEnv);
     
     return new Response("Not found", { status: 404 });
   } catch (error) {
