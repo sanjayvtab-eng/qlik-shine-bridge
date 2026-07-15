@@ -48,7 +48,7 @@ function sanitizeError(err: unknown): string {
     return "Incorrect email or password. Please try again.";
   if (msg.includes("email not confirmed"))
     return "Please verify your email address before signing in.";
-  if (msg.includes("user already registered") || msg.includes("already been registered"))
+  if (msg.includes("user already registered") || msg.includes("already been registered") || msg.includes("account with this email already exists"))
     return "An account with this email already exists. Please sign in instead.";
   if (msg.includes("token") || msg.includes("otp") || msg.includes("expired"))
     return "The verification code is invalid or has expired. Please request a new one.";
