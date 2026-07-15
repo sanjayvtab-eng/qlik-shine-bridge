@@ -236,12 +236,14 @@ async function handleVerifySignupOtp(request: Request, runtimeEnv: RuntimeEnv) {
 export async function handleAuthApiRequest(request: Request, runtimeEnv: RuntimeEnv) {
   try {
     const url = new URL(request.url);
+    if (!url.pathname.startsWith("/api/auth/")) return null;
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
     if (url.pathname === "/api/auth/signup/send-otp") return await handleSendSignupOtp(request, runtimeEnv);
     if (url.pathname === "/api/auth/signup/verify") return await handleVerifySignupOtp(request, runtimeEnv);
     if (url.pathname === "/api/auth/recovery/send-otp") return await handleSendRecoveryOtp(request, runtimeEnv);
-    return null;
+    
+    return new Response("Not found", { status: 404 });
   } catch (error) {
     console.error(error);
     const message = error instanceof Error ? error.message : "Authentication request failed.";
