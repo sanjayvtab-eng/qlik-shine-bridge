@@ -139,6 +139,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [stateToken, setStateToken] = useState("");
   const [loading, setLoading] = useState(false);
 
   const postAuthJson = useCallback(async (path: string, body: Record<string, string>) => {
@@ -160,7 +161,8 @@ function AuthPage() {
     }
     setLoading(true);
     try {
-      await postAuthJson("/api/auth/signup/send-otp", { email });
+      const res = await postAuthJson("/api/auth/signup/send-otp", { email });
+      setStateToken(res.stateToken || "");
       toast.success("Verification code sent to your email.");
       setAuthState("VERIFY_OTP");
     } catch (error) {
@@ -187,7 +189,7 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await postAuthJson("/api/auth/signup/verify", { email, password, token: otp });
+      await postAuthJson("/api/auth/signup/verify", { email, password, token: otp, stateToken });
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       toast.success("Email verified successfully!");

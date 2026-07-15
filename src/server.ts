@@ -5,12 +5,26 @@ import { renderErrorPage } from "./lib/error-page";
 
 type RuntimeEnv = Record<string, string | undefined>;
 
-type SignupOtpRecord = {
-  token: string;
-  expiresAt: number;
-};
+// Stateless signed token helpers using standard Web Crypto API
+async function signStateToken(email: string, token: string, expiresAt: number, secret: string) {
+  const payload = btoa(JSON.stringify({ email, token, expiresAt }));
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  const signature = Array.from(new Uint8Array(signatureBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${payload}.${signature}`;
+}
 
-const signupOtps = new Map<string, SignupOtpRecord>();
+async function verifyStateToken(stateToken: string, secret: string) {
+  const [payload, signature] = stateToken.split(".");
+  if (!payload || !signature) return null;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const expectedSignatureBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  const expectedSignature = Array.from(new Uint8Array(expectedSignatureBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (expectedSignature !== signature) return null;
+  try { return JSON.parse(atob(payload)); } catch { return null; }
+}
 
 async function readLocalDotEnv(): Promise<RuntimeEnv> {
   if (typeof process === "undefined" || !process.versions?.node) return {};
@@ -127,10 +141,15 @@ async function handleSendSignupOtp(request: Request, runtimeEnv: RuntimeEnv) {
 
   if (!email || !email.includes("@")) return jsonResponse({ error: "Enter a valid email address." }, { status: 400 });
 
+  const serviceRoleKey = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) return jsonResponse({ error: "Server misconfiguration. Cannot generate secure token." }, { status: 500 });
+
   const token = generateOtp();
-  signupOtps.set(email, { token, expiresAt: Date.now() + 10 * 60 * 1000 });
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const stateToken = await signStateToken(email, token, expiresAt, serviceRoleKey);
+  
   await sendSignupOtpEmail(runtimeEnv, email, token);
-  return jsonResponse({ ok: true });
+  return jsonResponse({ ok: true, stateToken });
 }
 
 async function createConfirmedSupabaseUser(runtimeEnv: RuntimeEnv, email: string, password: string) {
@@ -163,19 +182,23 @@ async function createConfirmedSupabaseUser(runtimeEnv: RuntimeEnv, email: string
 
 async function handleVerifySignupOtp(request: Request, runtimeEnv: RuntimeEnv) {
   const body = await readJsonBody(request);
-  const payload = body && typeof body === "object" ? body as { email?: unknown; password?: unknown; token?: unknown } : {};
+  const payload = body && typeof body === "object" ? body as { email?: unknown; password?: unknown; token?: unknown; stateToken?: unknown } : {};
   const email = normalizeEmail(payload.email);
   const password = typeof payload.password === "string" ? payload.password : "";
   const token = typeof payload.token === "string" ? payload.token.trim() : "";
-  const record = signupOtps.get(email);
+  const stateToken = typeof payload.stateToken === "string" ? payload.stateToken : "";
+  
+  const serviceRoleKey = runtimeEnv.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) return jsonResponse({ error: "Server misconfiguration." }, { status: 500 });
 
-  if (!email || !password || !token) return jsonResponse({ error: "Email, password, and verification code are required." }, { status: 400 });
+  if (!email || !password || !token || !stateToken) return jsonResponse({ error: "Email, password, and verification code are required." }, { status: 400 });
   if (password.length < 6) return jsonResponse({ error: "Password must be at least 6 characters." }, { status: 400 });
-  if (!record || record.expiresAt < Date.now()) return jsonResponse({ error: "Verification code expired. Please request a new one." }, { status: 400 });
+  
+  const record = await verifyStateToken(stateToken, serviceRoleKey);
+  if (!record || record.email !== email || record.expiresAt < Date.now()) return jsonResponse({ error: "Verification code expired or invalid. Please request a new one." }, { status: 400 });
   if (record.token !== token) return jsonResponse({ error: "Invalid verification code." }, { status: 400 });
 
   await createConfirmedSupabaseUser(runtimeEnv, email, password);
-  signupOtps.delete(email);
   return jsonResponse({ ok: true });
 }
 
