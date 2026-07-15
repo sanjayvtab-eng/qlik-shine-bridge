@@ -175,7 +175,7 @@ async function handleSendRecoveryOtp(request: Request, runtimeEnv: RuntimeEnv) {
 
   const data = await response.json();
   const token = data.properties?.email_otp || data.email_otp;
-  const uid = data.user?.id;
+  const uid = data.user?.id || data.id;
   if (!token || !uid) throw new Error("Could not retrieve recovery details from Supabase.");
 
   const expiresAt = Date.now() + 10 * 60 * 1000;
