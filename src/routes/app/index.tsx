@@ -59,9 +59,7 @@ function UploadPage() {
       const syntaxErrors = await validateQvsScriptsViaAi([...selectedSources, ...selectedEtls]);
       if (syntaxErrors && syntaxErrors.length > 0) {
         setScriptErrors(syntaxErrors);
-        setStageStatus(3, "pending");
-        setLoading(false);
-        return;
+        // We no longer abort here. We let the user see the warnings but still proceed.
       }
       const sourceText = selectedSources.map(f => f.text).join('\n\n');
       const etlText = selectedEtls.map(f => f.text).join('\n\n');
@@ -197,9 +195,9 @@ function UploadPage() {
           <div className="flex items-start gap-3 mb-4">
             <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-display text-base font-semibold text-amber-500">Syntax or Query Validation Failed</h3>
+              <h3 className="font-display text-base font-semibold text-amber-500">Syntax or Query Validation Warnings</h3>
               <p className="text-sm text-amber-500/80 mt-0.5">
-                The engine detected invalid or negative queries in your scripts. Please fix them before proceeding.
+                The engine detected potential issues in your scripts. You can review them below or proceed with the migration.
               </p>
             </div>
           </div>
